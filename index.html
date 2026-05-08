@@ -623,10 +623,13 @@ async function loadCoordinatorScreen(){
   document.getElementById('coord-hub-list').innerHTML=hubData.map(({hub,latestOrder})=>{
     const loaded=!!latestOrder;
     const dateLabel=latestOrder?.name?.replace('.csv','')||'';
+    const orderFilePath=latestOrder?`orders/${HUB_SLUG[hub]}/${latestOrder.name}`:'';
+    const clearBtn=loaded?`<button class="coord-del-btn" onclick="clearHubOrder('${escH(orderFilePath)}','${escH(hub)}','${escH(dateLabel)}')" title="Eliminar pedido cargado">🗑</button>`:'';
     return `<div class="coord-hub-row">
       <span class="coord-hub-name">${escH(hub)}</span>
       <span class="coord-hub-badge ${loaded?'loaded':'empty'}" id="badge-${HUB_SLUG[hub]}">${loaded?`✓ ${escH(dateLabel)}`:'Sin pedido'}</span>
       <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
+      ${clearBtn}
     </div>`;
   }).join('');
 
@@ -749,6 +752,19 @@ async function doUpload(hub, text, items, badge){
     if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Error'; }
     toast('❌ Error al subir: '+e.message);
   }
+}
+
+function clearHubOrder(path, hub, dateLabel){
+  showModal(
+    '¿Eliminar pedido cargado?',
+    `Se eliminará el pedido del ${dateLabel} para ${hub}.\n\nLos armadores ya no podrán acceder a él. Esta acción no se puede deshacer.`,
+    'Eliminar',
+    'm-danger',
+    async ()=>{
+      try{ await sbDelete(path); toast(`✓ Pedido de ${hub} eliminado`); loadCoordinatorScreen(); }
+      catch(e){ toast('❌ Error al eliminar: '+e.message); }
+    }
+  );
 }
 
 async function downloadRemoteReport(path, filename){
