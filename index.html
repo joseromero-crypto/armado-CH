@@ -800,19 +800,11 @@ Sin ícono — Pendiente, aún sin confirmar
 📭 Sin código — producto sin código registrado`);
 }
 
-/* ── REPORT PATH WITH NUMBERING ── */
-async function getNextReportPath(hub){
-  const date=todayStr();
-  const slug=HUB_SLUG[hub];
-  try{
-    const files=await sbList(`reports/${slug}/`);
-    const todayFiles=files.filter(f=>f.name&&f.name.startsWith(date)&&f.name.endsWith('.csv'));
-    if(!todayFiles.length) return {path:`reports/${slug}/${date}.csv`, suffix:''};
-    const num=todayFiles.length+1;
-    return {path:`reports/${slug}/${date}_${num}.csv`, suffix:`_${num}`};
-  }catch(e){
-    return {path:`reports/${slug}/${date}.csv`, suffix:''};
-  }
+/* ── REPORT PATH (timestamp-based, sync) ── */
+function getReportPath(hub){
+  const t=new Date(), d=t.toISOString().slice(0,10), hm=t.toTimeString().slice(0,5).replace(':','-');
+  const suffix=`_${hm}`;
+  return {path:`reports/${HUB_SLUG[hub]}/${d}${suffix}.csv`, suffix};
 }
 
 /* ── START ── */
@@ -981,13 +973,15 @@ function requestFinish(){
   if(pending>0) showModal(`${pending} producto${pending>1?'s':''} pendiente${pending>1?'s':''}`,`Hay ${pending} sin confirmar. ¿Ver el resumen de todas formas?`,'Ver resumen','m-danger',showSummary);
   else showSummary();
 }
-async function showSummary(){
-  const items=S.items, results=S.results, total=items.length;
+function showSummary(){
+  // Capture state immediately — prevents stale/empty data if newOrder() fires before upload
+  const hub=S.hub, items=S.items, results=S.results;
+  const total=items.length;
   const ok=results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
   const partial=results.filter(r=>[ITEM_STATUS.PARTIAL,ITEM_STATUS.NOBC,ITEM_STATUS.WRONGSYS].includes(r.status)).length;
   const skipped=results.filter(r=>r.status===ITEM_STATUS.SKIPPED).length;
   const now=new Date();
-  document.getElementById('sum-hub-p').textContent=`${S.hub} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`;
+  document.getElementById('sum-hub-p').textContent=`${hub} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`;
   document.getElementById('st-total').textContent=total;
   document.getElementById('st-ok').textContent=ok;
   document.getElementById('st-part').textContent=partial;
@@ -1002,11 +996,11 @@ async function showSummary(){
     return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
   }).join('');
   showScreen('summary');
-  // Async: determine report slot and save (fire-and-forget)
-  getNextReportPath(S.hub).then(({path,suffix})=>{
-    saveToHistory();
-    saveReportToSupabase(path, suffix);
-  }).catch(e=>console.warn('Report path error:',e));
+  saveToHistory();
+  // Upload immediately with captured state — no async gap where S.* could be cleared
+  const {path, suffix}=getReportPath(hub);
+  const {csv}=generateCSV(items, results, hub, suffix);
+  sbUpload(path, csv).catch(e=>console.warn('Report upload failed (non-critical):',e));
 }
 
 /* ── CSV GENERATION ── */
@@ -1035,12 +1029,6 @@ function triggerDownload(csv, filename){
   const url=URL.createObjectURL(blob);
   Object.assign(document.createElement('a'),{href:url,download:filename}).click();
   URL.revokeObjectURL(url);
-}
-async function saveReportToSupabase(path, suffix=''){
-  try{
-    const {csv}=generateCSV(S.items,S.results,S.hub,suffix);
-    await sbUpload(path, csv);
-  }catch(e){ console.warn('Report upload failed (non-critical):',e); }
 }
 
 /* ── HISTORY (localStorage backup — silent, not shown in UI) ── */
