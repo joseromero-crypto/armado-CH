@@ -220,6 +220,18 @@
       .hub-grid{grid-template-columns:repeat(3,1fr)}
       .detail-actions{max-width:640px;margin:0 auto;left:50%;right:auto;transform:translateX(-50%);width:100%}
     }
+
+    /* INLINE EXPAND PANEL */
+    .item-expand-panel{background:white;border-top:2px solid var(--green);border-radius:0 0 var(--radius-sm) var(--radius-sm);margin-top:-8px;margin-bottom:8px;box-shadow:var(--shadow-md);overflow:hidden}
+    .item-row.expanded{border-radius:var(--radius-sm) var(--radius-sm) 0 0;margin-bottom:0;border-color:var(--green)!important}
+    .item-row.expanded .row-chevron{transform:rotate(90deg)}
+    .row-chevron{transition:transform .2s}
+    .inline-actions{display:flex;gap:10px;padding:12px 16px 16px;border-top:1px solid var(--gray-200);background:white}
+    .exp-input{width:100%;padding:13px 14px;border:2px solid var(--gray-300);border-radius:var(--radius-sm);font-size:17px;font-family:monospace;-webkit-appearance:none;transition:border-color .15s,background .15s;letter-spacing:1px}
+    .exp-input:focus{outline:none;border-color:var(--green)}
+    .exp-input.exp-ok{border-color:#00c3b3;background:#E0F7F5}
+    .exp-input.exp-err{border-color:var(--red);background:var(--red-light)}
+    .min-exp-info{font-size:12px;color:#7a4f00;margin-bottom:8px;padding:6px 10px;background:#FFF8E1;border-radius:6px;border-left:3px solid #FFA000}
   </style>
 </head>
 <body>
@@ -421,6 +433,56 @@ const S = { hub:'', items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, 
 
 const BC_STATUS  = { PENDING:'pending', SCANNED:'scanned', UNAVAIL:'unavail', WRONGSYS:'wrongsys', NOSYS:'nosys' };
 const ITEM_STATUS = { PENDING:'pending', COMPLETED:'completed', PARTIAL:'partial', NOBC:'nobc', WRONGSYS:'wrongsys', SKIPPED:'skipped' };
+
+/* ── BARCODE MATCH (leading-zero bypass) ── */
+function bcMatch(scanned, system){
+  if(!scanned||!system) return false;
+  if(scanned===system) return true;
+  // Accept if digits without leading zeros are identical (scanner adds leading 0)
+  const s1=scanned.replace(/^0+/,''), s2=system.replace(/^0+/,'');
+  return s1.length>0 && s1===s2;
+}
+
+/* ── MIN EXPIRY DATE ── */
+function computeMinExpDate(item){
+  const fechaStr=(item['Vida anaquel usuarios (min. fecha)']||'').trim();
+  const dias=parseInt(item['Vida anaquel usuarios (min. días)']||'');
+  if(!fechaStr||isNaN(dias)) return null;
+  const M={ene:0,jan:0,feb:1,mar:2,abr:3,apr:3,may:4,jun:5,jul:6,ago:7,aug:7,sep:8,oct:9,nov:10,dic:11,dec:11};
+  const parts=fechaStr.split('-');
+  if(parts.length<2) return null;
+  const mKey=parts[0].toLowerCase().slice(0,3), day=parseInt(parts[1]);
+  const monthIdx=M[mKey];
+  if(monthIdx===undefined||isNaN(day)) return null;
+  const now=new Date();
+  let d=new Date(now.getFullYear(),monthIdx,day);
+  if(now-d>60*86400000) d=new Date(now.getFullYear()+1,monthIdx,day);
+  d.setDate(d.getDate()+dias);
+  return d;
+}
+function formatMinExpDate(d){
+  if(!d) return null;
+  const MN=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${String(d.getDate()).padStart(2,'0')}-${MN[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+/* ── EXP DATE INPUT AUTO-FORMATTER ── */
+function formatExpDateInput(inp){
+  let v=inp.value.replace(/\D/g,'');
+  if(v.length>8) v=v.slice(0,8);
+  let f=v.slice(0,2);
+  if(v.length>2) f+='/'+v.slice(2,4);
+  if(v.length>4) f+='/'+v.slice(4,8);
+  inp.value=f;
+  const msg=document.getElementById('exp-msg');
+  if(f.length===10){
+    if(S.activeIdx>=0) S.results[S.activeIdx].expDate=f;
+    inp.className='exp-input exp-ok';
+    if(msg) msg.textContent='';
+  } else {
+    inp.className='exp-input';
+  }
+}
 
 /* ── BARCODE CLEANING ── */
 function cleanBC(raw){
@@ -827,7 +889,7 @@ function getReportPath(hub){
 function startAssembly(){
   S.results=S.items.map(item=>{
     const bc=cleanBC(item['Código de barras']);
-    return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS, scannedBC:null };
+    return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS, scannedBC:null, expDate:null };
   });
   S.listScrollY=0; buildList(); showScreen('list');
 }
@@ -848,14 +910,15 @@ function renderList(){
     const imgUrl=getImgUrl(item);
     const icon={[ITEM_STATUS.COMPLETED]:'✅',[ITEM_STATUS.PARTIAL]:'⚠️',[ITEM_STATUS.SKIPPED]:'❌',[ITEM_STATUS.NOBC]:'⚠️',[ITEM_STATUS.PENDING]:''}[result.status]||'';
     const thumb=imgUrl?`<img src="${escH(imgUrl)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'row-thumb-ph',textContent:'📦'}))">` :`<span class="row-thumb-ph">📦</span>`;
-    return `<div class="item-row status-${result.status}" onclick="openDetail(${i})">
+    return `<div class="item-row status-${result.status}" id="item-row-${i}" onclick="openDetail(${i})">
       <div class="row-thumb">${thumb}</div>
       <div class="row-body">
         <div class="row-name">${escH(name)}</div>
         <div class="row-meta"><span class="row-pos">${escH(pos)}</span><span class="row-qty">${reqQ} ${escH(unit)}</span>${!bc?'<span style="font-size:11px;color:var(--gray-400)">sin código</span>':''}</div>
       </div>
       <div class="row-right"><span class="row-status">${icon}</span><span class="row-chevron">›</span></div>
-    </div>`;
+    </div>
+    <div id="detail-panel-${i}" class="item-expand-panel" style="display:none"></div>`;
   }).join('');
 }
 function updateListProgress(){
@@ -864,16 +927,48 @@ function updateListProgress(){
   document.getElementById('list-prog-label').textContent=`${done}/${total}`;
 }
 
-/* ── DETAIL ── */
-function openDetail(idx){ S.activeIdx=idx; S.listScrollY=window.scrollY; renderDetail(); showScreen('detail'); window.scrollTo(0,0); }
-function renderDetail(){
-  const idx=S.activeIdx, item=S.items[idx], result=S.results[idx], total=S.items.length;
-  const bc=cleanBC(item['Código de barras']), name=item['Producto']||'Sin nombre';
-  const pos=String(item['Posición armado']||'—').replace(/[\[\]]/g,'').trim();
+/* ── INLINE ACCORDION DETAIL ── */
+let _expandedIdx=-1;
+
+function openDetail(idx){
+  if(_expandedIdx===idx){ collapseDetail(); return; }
+  if(_expandedIdx>=0) collapseDetail();
+  _expandedIdx=idx; S.activeIdx=idx;
+  const panel=document.getElementById(`detail-panel-${idx}`);
+  const row=document.getElementById(`item-row-${idx}`);
+  if(!panel) return;
+  panel.innerHTML=buildDetailPanelHtml(idx);
+  panel.style.display='block';
+  if(row) row.classList.add('expanded');
+  setTimeout(()=>{
+    panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+    const result=S.results[idx], bc=cleanBC(S.items[idx]['Código de barras']);
+    (result.bcStatus===BC_STATUS.PENDING&&bc?document.getElementById('bc-field'):document.getElementById('qty-field'))?.focus();
+  },120);
+}
+
+function collapseDetail(){
+  if(_expandedIdx<0) return;
+  const panel=document.getElementById(`detail-panel-${_expandedIdx}`);
+  const row=document.getElementById(`item-row-${_expandedIdx}`);
+  if(panel){ panel.style.display='none'; panel.innerHTML=''; }
+  if(row) row.classList.remove('expanded');
+  _expandedIdx=-1;
+}
+
+function buildDetailPanelHtml(idx){
+  const item=S.items[idx], result=S.results[idx];
+  const bc=cleanBC(item['Código de barras']);
   const unit=item['Kg/Pz']||'Pz', rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
-  const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ), imgUrl=getImgUrl(item);
-  document.getElementById('detail-title').textContent=name;
-  document.getElementById('detail-counter').textContent=`${idx+1}/${total}`;
+  const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
+  const imgUrl=getImgUrl(item);
+  const pos=String(item['Posición armado']||'—').replace(/[\[\]]/g,'').trim();
+  const inventory=String(item['Inventario hub saliente']||'').trim();
+  const minExpDate=computeMinExpDate(item), minExpStr=formatMinExpDate(minExpDate);
+  const savedPicked=result.picked!==null?result.picked:'';
+  const savedExp=(result.expDate&&result.expDate!=='N/A')?result.expDate:'';
+
+  // BC section
   let bcHtml='';
   if(!bc){
     bcHtml=`<div class="d-section"><div class="d-section-title">🔍 Código de barras</div><div class="nosys-pill">📭 Sin código registrado en sistema — no requiere escaneo</div></div>`;
@@ -886,28 +981,51 @@ function renderDetail(){
   } else {
     bcHtml=`<div class="d-section"><div class="d-section-title">🔍 Código de barras <span class="req-badge">Requerido</span></div><div class="bc-row"><input id="bc-field" class="bc-input" type="text" inputmode="text" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Escanear código…" oninput="onBCInput()" onkeydown="onBCKeydown(event)"><span class="bc-icon" id="bc-icon">⬜</span></div><div class="bc-msg" id="bc-msg"></div><div class="bc-options"><button class="bc-opt-btn" onclick="markBCUnavail()">No puedo escanear</button><button class="bc-opt-btn wrongsys" onclick="markBCWrongSys()">Código equivocado en sistema</button></div></div>`;
   }
-  const savedPicked=result.picked!==null?result.picked:'';
-  document.getElementById('detail-body').innerHTML=`
-    <div class="d-image-wrap">${imgUrl?`<img src="${escH(imgUrl)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'d-img-ph',textContent:'📦'}))">`:'<span class="d-img-ph">📦</span>'}</div>
-    <div class="d-info">
-      <div class="d-name">${escH(name)}</div>
-      <div class="d-tags">
+
+  // Image
+  const imgHtml=imgUrl?`<div style="text-align:center;padding:10px 16px;background:var(--gray-50);border-bottom:1px solid var(--gray-200)"><img src="${escH(imgUrl)}" alt="" style="max-height:110px;max-width:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>`:'';
+
+  // Expiry date section
+  let expHtml;
+  if(result.expDate==='N/A'){
+    expHtml=`<div class="d-section">
+      <div class="d-section-title">📅 Fecha de vencimiento <span class="ok-badge" style="background:#FFF8E1;color:#E65100">Sin fecha</span></div>
+      <div class="nobc-pill"><span>📅 Sin fecha de vencimiento — se registrará en el reporte</span><button onclick="resetExpDate()">✕</button></div>
+    </div>`;
+  } else {
+    expHtml=`<div class="d-section">
+      <div class="d-section-title">📅 Fecha de vencimiento <span class="req-badge">Requerido</span></div>
+      ${minExpStr?`<div class="min-exp-info">Mínimo aceptable: <strong>${escH(minExpStr)}</strong></div>`:''}
+      <input id="exp-date-field" class="exp-input${savedExp.length===10?' exp-ok':''}" type="text" inputmode="numeric" placeholder="DD/MM/AAAA" maxlength="10" value="${escH(savedExp)}" oninput="formatExpDateInput(this)" autocomplete="off">
+      <div class="bc-msg" id="exp-msg"></div>
+      <button class="nobc-btn" onclick="markNoExpDate()">Sin fecha de vencimiento</button>
+    </div>`;
+  }
+
+  return `${imgHtml}
+    <div class="d-info" style="padding:12px 16px 8px">
+      <div class="d-tags" style="margin-bottom:8px">
         <div class="d-tag"><span class="d-tag-k">Posición</span><span class="d-tag-v mono">${escH(pos)}</span></div>
         <div class="d-tag"><span class="d-tag-k">Unidad</span><span class="d-tag-v">${escH(unit)}</span></div>
         ${bc?`<div class="d-tag"><span class="d-tag-k">Código</span><span class="d-tag-v mono">${escH(bc)}</span></div>`:''}
+        ${inventory?`<div class="d-tag"><span class="d-tag-k">Inv. CH</span><span class="d-tag-v">${escH(inventory)}</span></div>`:''}
       </div>
       <div class="d-requested"><span class="d-req-label">Solicitado:</span><span class="d-req-num">${reqQ}</span><span class="d-req-unit">${escH(unit)}</span></div>
     </div>
     ${bcHtml}
+    ${expHtml}
     <div class="d-section"><div class="d-section-title">📦 Cantidad a armar</div>
       <div class="qty-row">
         <button class="qty-stepper" onclick="stepQty(-1)">−</button>
-        <input id="qty-field" class="qty-input" type="number" inputmode="decimal" min="0" step="${unit==='Kg'?'0.01':'1'}" placeholder="0" value="${savedPicked}" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmItem();}">
+        <input id="qty-field" class="qty-input" type="number" inputmode="decimal" min="0" step="${unit==='Kg'?'0.01':'1'}" placeholder="0" value="${escH(String(savedPicked))}" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmItem();}">
         <button class="qty-stepper" onclick="stepQty(1)">+</button>
         <span class="qty-unit-lbl">${escH(unit)}</span>
       </div>
+    </div>
+    <div class="inline-actions">
+      <button class="btn-skip" onclick="markFaltante()">⚑ Faltante</button>
+      <button class="btn-confirm" onclick="confirmItem()">Confirmar ✓</button>
     </div>`;
-  setTimeout(()=>{ (result.bcStatus===BC_STATUS.PENDING&&bc?document.getElementById('bc-field'):document.getElementById('qty-field'))?.focus(); },120);
 }
 
 /* ── BC HANDLERS ── */
@@ -916,9 +1034,9 @@ function onBCInput(){
   const field=document.getElementById('bc-field'), icon=document.getElementById('bc-icon'), msg=document.getElementById('bc-msg');
   const val=cleanBC(field.value);
   if(!val){ field.className='bc-input'; icon.textContent='⬜'; msg.textContent=''; S.results[idx].bcStatus=BC_STATUS.PENDING; return; }
-  if(val===bc){
+  if(bcMatch(val,bc)){
     field.className='bc-input bc-ok'; icon.textContent='✅'; msg.className='bc-msg ok-msg'; msg.textContent='✓ Código correcto';
-    S.results[idx].bcStatus=BC_STATUS.SCANNED; toast('✓ Código correcto');
+    S.results[idx].bcStatus=BC_STATUS.SCANNED; S.results[idx].scannedBC=val; toast('✓ Código correcto');
     setTimeout(()=>document.getElementById('qty-field')?.focus(),120);
   } else if(val.length>=bc.length){
     field.className='bc-input bc-err'; icon.textContent='❌'; msg.className='bc-msg err-msg'; msg.textContent='❌ Código no coincide — verifica el producto';
@@ -928,14 +1046,27 @@ function onBCInput(){
 function onBCKeydown(e){
   if(e.key==='Enter'){ e.preventDefault(); onBCInput(); if(S.results[S.activeIdx].bcStatus===BC_STATUS.SCANNED) setTimeout(()=>document.getElementById('qty-field')?.focus(),120); }
 }
-function markBCUnavail(){ S.results[S.activeIdx].bcStatus=BC_STATUS.UNAVAIL; S.results[S.activeIdx].scannedBC=null; renderDetail(); setTimeout(()=>document.getElementById('qty-field')?.focus(),120); }
+/* Re-renders the open expand panel in-place, preserving unsaved field values */
+function refreshDetailPanel(){
+  const panel=document.getElementById(`detail-panel-${S.activeIdx}`);
+  if(!panel||panel.style.display==='none') return;
+  const qtyVal=document.getElementById('qty-field')?.value||'';
+  const expVal=document.getElementById('exp-date-field')?.value||'';
+  panel.innerHTML=buildDetailPanelHtml(S.activeIdx);
+  const qf=document.getElementById('qty-field'); if(qf&&qtyVal) qf.value=qtyVal;
+  // Only restore typed exp value if not already in a bypass/saved state
+  const ef=document.getElementById('exp-date-field'); if(ef&&expVal) ef.value=expVal;
+}
+function markBCUnavail(){ S.results[S.activeIdx].bcStatus=BC_STATUS.UNAVAIL; S.results[S.activeIdx].scannedBC=null; refreshDetailPanel(); setTimeout(()=>document.getElementById('qty-field')?.focus(),120); }
 function markBCWrongSys(){
   const field=document.getElementById('bc-field'), scanned=cleanBC(field?.value||'');
   if(!scanned){ toast('⚠ Primero escanea el código físico del producto'); field?.focus(); return; }
   S.results[S.activeIdx].bcStatus=BC_STATUS.WRONGSYS; S.results[S.activeIdx].scannedBC=scanned;
-  renderDetail(); setTimeout(()=>document.getElementById('qty-field')?.focus(),120);
+  refreshDetailPanel(); setTimeout(()=>document.getElementById('qty-field')?.focus(),120);
 }
-function resetBC(){ S.results[S.activeIdx].bcStatus=BC_STATUS.PENDING; S.results[S.activeIdx].scannedBC=null; renderDetail(); setTimeout(()=>document.getElementById('bc-field')?.focus(),120); }
+function resetBC(){ S.results[S.activeIdx].bcStatus=BC_STATUS.PENDING; S.results[S.activeIdx].scannedBC=null; refreshDetailPanel(); setTimeout(()=>document.getElementById('bc-field')?.focus(),120); }
+function markNoExpDate(){ S.results[S.activeIdx].expDate='N/A'; refreshDetailPanel(); setTimeout(()=>document.getElementById('qty-field')?.focus(),120); }
+function resetExpDate(){ S.results[S.activeIdx].expDate=null; refreshDetailPanel(); setTimeout(()=>document.getElementById('exp-date-field')?.focus(),120); }
 
 /* ── QTY ── */
 function stepQty(dir){
@@ -953,8 +1084,30 @@ function confirmItem(){
   if(bc&&result.bcStatus===BC_STATUS.PENDING){
     const scanned=cleanBC((document.getElementById('bc-field')||{}).value||'');
     if(!scanned){ toast('⚠ Escanea el código de barras o usa una de las opciones'); document.getElementById('bc-field')?.focus(); return; }
-    if(scanned!==bc){ toast('❌ Código no coincide. Usa "Código equivocado en sistema" si el código físico es diferente.'); return; }
+    if(!bcMatch(scanned,bc)){ toast('❌ Código no coincide. Usa "Código equivocado en sistema" si el código físico es diferente.'); return; }
     result.bcStatus=BC_STATUS.SCANNED; result.scannedBC=scanned;
+  }
+  // Expiry date validation
+  if(result.expDate!=='N/A'){
+    const expField=document.getElementById('exp-date-field');
+    const expStr=(expField?.value||'').trim();
+    if(expStr===''){ toast('⚠ Ingresa la fecha de vencimiento'); expField?.focus(); return; }
+    if(!/^\d{2}\/\d{2}\/\d{4}$/.test(expStr)){ toast('⚠ Formato inválido — usa DD/MM/AAAA'); expField?.focus(); return; }
+    const [dd,mm,yyyy]=expStr.split('/').map(Number);
+    if(mm<1||mm>12){ toast('⚠ Mes inválido (01–12)'); if(expField){ expField.className='exp-input exp-err'; expField.focus(); } return; }
+    if(dd<1||dd>31){ toast('⚠ Día inválido (01–31)'); if(expField){ expField.className='exp-input exp-err'; expField.focus(); } return; }
+    // Compare against minimum acceptable date
+    const entered=new Date(yyyy,mm-1,dd);
+    const minDate=computeMinExpDate(item);
+    if(minDate&&entered<minDate){
+      const minStr=formatMinExpDate(minDate);
+      toast(`⚠ Fecha muy próxima — mínimo aceptable: ${minStr}`,3000);
+      if(expField){ expField.className='exp-input exp-err'; expField.focus(); }
+      const msg=document.getElementById('exp-msg');
+      if(msg){ msg.className='bc-msg err-msg'; msg.textContent=`Mínimo: ${minStr}`; }
+      return;
+    }
+    result.expDate=expStr;
   }
   const qField=document.getElementById('qty-field'), qStr=(qField?.value||'').trim();
   if(qStr===''){ toast('⚠ Ingresa la cantidad a armar'); qField?.focus(); return; }
@@ -967,24 +1120,26 @@ function confirmItem(){
   else if(result.bcStatus===BC_STATUS.WRONGSYS) result.status=ITEM_STATUS.WRONGSYS;
   else if(Math.abs(picked-reqQ)<=tol) result.status=ITEM_STATUS.COMPLETED;
   else result.status=ITEM_STATUS.PARTIAL;
-  updateListRow(idx); updateListProgress(); goBackToList();
+  collapseDetail(); updateListRow(idx); updateListProgress();
 }
 function markFaltante(){
   const idx=S.activeIdx;
-  S.results[idx].picked=0; S.results[idx].bcStatus=BC_STATUS.PENDING; S.results[idx].status=ITEM_STATUS.SKIPPED;
-  updateListRow(idx); updateListProgress(); goBackToList();
+  S.results[idx].picked=0; S.results[idx].bcStatus=BC_STATUS.PENDING;
+  S.results[idx].status=ITEM_STATUS.SKIPPED; S.results[idx].expDate=null;
+  collapseDetail(); updateListRow(idx); updateListProgress();
 }
 function updateListRow(idx){
-  const rows=document.querySelectorAll('#list-body .item-row');
-  if(rows[idx]){
+  const row=document.getElementById(`item-row-${idx}`);
+  if(row){
     const r=S.results[idx], icon={completed:'✅',partial:'⚠️',skipped:'❌',nobc:'⚠️',wrongsys:'⚠️',pending:''}[r.status]||'';
-    const sd=rows[idx].querySelector('.row-status'); if(sd) sd.textContent=icon;
-    rows[idx].className=`item-row status-${r.status}`;
+    const sd=row.querySelector('.row-status'); if(sd) sd.textContent=icon;
+    row.className=`item-row status-${r.status}`;
   }
 }
 
 /* ── FINISH / SUMMARY ── */
 function requestFinish(){
+  collapseDetail();
   const pending=S.results.filter(r=>r.status===ITEM_STATUS.PENDING).length;
   if(pending>0) showModal(`${pending} producto${pending>1?'s':''} pendiente${pending>1?'s':''}`,`Hay ${pending} sin confirmar. ¿Ver el resumen de todas formas?`,'Ver resumen','m-danger',showSummary);
   else showSummary();
@@ -1009,7 +1164,8 @@ function showSummary(){
     const pick=r.picked!==null?(unit==='Kg'?Number(r.picked).toFixed(2):Math.round(r.picked)):'—';
     const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
     const bcNote=r.bcStatus===BC_STATUS.UNAVAIL?' · ⚠ BC ilegible':r.bcStatus===BC_STATUS.WRONGSYS?' · ⚠ Discrepancia':'';
-    return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
+    const expNote=r.expDate?` · Venc: ${r.expDate}`:'';
+    return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}${expNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
   }).join('');
   showScreen('summary');
   saveToHistory();
@@ -1024,7 +1180,7 @@ function generateCSV(items, results, hub, fileSuffix=''){
   const now=new Date();
   const date=now.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
   const time=now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  const headers=['Hub','Fecha','Hora','Posición armado','Producto','Código en sistema','Código físico escaneado','Unidad','Solicitado','Armado','Verificación código','Estado'];
+  const headers=['Hub','Fecha','Hora','Posición armado','Producto','Código en sistema','Código físico escaneado','Unidad','Solicitado','Armado','Verificación código','Estado','Fecha vencimiento'];
   const rows=items.map((item,i)=>{
     const r=results[i], unit=item['Kg/Pz']||'Pz', rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
     const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
@@ -1033,7 +1189,8 @@ function generateCSV(items, results, hub, fileSuffix=''){
     const bcVerify={[BC_STATUS.SCANNED]:'Confirmado',[BC_STATUS.UNAVAIL]:'No disponible (ilegible)',[BC_STATUS.WRONGSYS]:'Discrepancia — código físico ≠ sistema',[BC_STATUS.NOSYS]:'Sin código en sistema',[BC_STATUS.PENDING]:'No escaneado'}[r.bcStatus]||'';
     const estado={[ITEM_STATUS.COMPLETED]:'Completo',[ITEM_STATUS.PARTIAL]:'Parcial',[ITEM_STATUS.NOBC]:'Parcial (BC ilegible)',[ITEM_STATUS.WRONGSYS]:'Parcial (discrepancia de código)',[ITEM_STATUS.SKIPPED]:'Faltante',[ITEM_STATUS.PENDING]:'Pendiente'}[r.status]||'Pendiente';
     const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
-    return [hub,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,pick,bcVerify,estado];
+    const expOut=r.expDate==='N/A'?'Sin fecha de vencimiento':(r.expDate||'');
+    return [hub,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,pick,bcVerify,estado,expOut];
   });
   const csv=[headers,...rows].map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const hubSlug=hub.replace(/\s+/g,'_');
@@ -1065,7 +1222,7 @@ function saveToHistory(){
 
 /* ── NEW ORDER ── */
 function newOrder(){
-  S.items=[]; S.results=[]; S.hub='';
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub='';
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
   document.getElementById('start-btn').disabled=true;
@@ -1073,7 +1230,7 @@ function newOrder(){
 }
 
 /* ── NAV ── */
-function goBackToList(){ updateListRow(S.activeIdx); showScreen('list'); requestAnimationFrame(()=>window.scrollTo(0,S.listScrollY)); }
+function goBackToList(){ collapseDetail(); }
 function showScreen(name){ clearToast(); document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById('screen-'+name).classList.add('active'); if(name!=='list') window.scrollTo(0,0); }
 
 /* ── MODAL ── */
