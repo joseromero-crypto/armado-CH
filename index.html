@@ -402,7 +402,8 @@ const HUB_SLUG = {
 };
 const HUBS = Object.keys(HUB_SLUG);
 
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function localDateStr(d){ const t=d||new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; }
+function todayStr(){ return localDateStr(); }
 function orderPath(hub){ return `orders/${HUB_SLUG[hub]}/${todayStr()}.csv`; }
 
 async function sbUpload(path, content){
@@ -880,7 +881,7 @@ Sin ícono — Pendiente, aún sin confirmar
 
 /* ── REPORT PATH (timestamp-based, sync) ── */
 function getReportPath(hub){
-  const t=new Date(), d=t.toISOString().slice(0,10), hm=t.toTimeString().slice(0,5).replace(':','-');
+  const t=new Date(), d=localDateStr(t), hm=t.toTimeString().slice(0,5).replace(':','-');
   const suffix=`_${hm}`;
   return {path:`reports/${HUB_SLUG[hub]}/${d}${suffix}.csv`, suffix};
 }
@@ -1194,7 +1195,7 @@ function generateCSV(items, results, hub, fileSuffix=''){
   });
   const csv=[headers,...rows].map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const hubSlug=hub.replace(/\s+/g,'_');
-  const dateISO=now.toISOString().slice(0,10);
+  const dateISO=localDateStr(now);
   return { csv, filename:`${hubSlug}_${dateISO}${fileSuffix}.csv`, now };
 }
 function triggerDownload(csv, filename){
@@ -1209,7 +1210,7 @@ const HISTORY_KEY='calii_order_history';
 function saveToHistory(){
   try{
     const {csv,filename,now}=generateCSV(S.items,S.results,S.hub);
-    const today=now.toISOString().slice(0,10);
+    const today=localDateStr(now);
     let h=[]; try{ h=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]'); }catch(_){}
     h=h.filter(e=>e.date===today);
     h.push({id:Date.now(),date:today,hub:S.hub,total:S.items.length,
