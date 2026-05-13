@@ -232,6 +232,22 @@
     .exp-input.exp-ok{border-color:#00c3b3;background:#E0F7F5}
     .exp-input.exp-err{border-color:var(--red);background:var(--red-light)}
     .min-exp-info{font-size:12px;color:#7a4f00;margin-bottom:8px;padding:6px 10px;background:#FFF8E1;border-radius:6px;border-left:3px solid #FFA000}
+
+    /* ASSEMBLER LIST (coordinator) */
+    .assembler-mgr-box{background:white;border-radius:var(--radius-sm);padding:14px 16px;box-shadow:var(--shadow-sm);margin-bottom:8px}
+    .assembler-item{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--gray-200)}
+    .assembler-item:last-child{border-bottom:none}
+    .assembler-item-name{flex:1;font-size:14px;font-weight:600;color:var(--gray-900)}
+    .assembler-add-row{display:flex;gap:8px;margin-top:10px}
+    .assembler-text-input{flex:1;padding:10px 12px;border:2px solid var(--gray-300);border-radius:var(--radius-sm);font-size:14px;-webkit-appearance:none;transition:border-color .15s}
+    .assembler-text-input:focus{outline:none;border-color:var(--green)}
+    .assembler-add-btn{background:var(--green);color:white;border:none;border-radius:var(--radius-sm);padding:10px 18px;font-size:22px;line-height:1;font-weight:700;cursor:pointer;flex-shrink:0}
+    .assembler-add-btn:active{opacity:.8}
+
+    /* ASSEMBLER SELECT (setup) */
+    .assembler-select{width:100%;padding:13px 14px;border:2px solid var(--gray-300);border-radius:var(--radius-sm);font-size:15px;font-weight:600;color:var(--gray-900);background:white;-webkit-appearance:none;cursor:pointer;transition:border-color .15s,background .15s}
+    .assembler-select:focus{outline:none;border-color:var(--green)}
+    .assembler-select.selected{border-color:var(--green);background:var(--green-light)}
   </style>
 </head>
 <body>
@@ -262,6 +278,14 @@
     <button class="back-text-btn" onclick="loadCoordinatorScreen()" title="Actualizar">↺</button>
   </div>
   <div class="coord-body">
+    <div class="coord-section-title" style="margin-top:0">Armadores</div>
+    <div class="assembler-mgr-box">
+      <div id="assembler-list-items"><div class="coord-empty">Cargando…</div></div>
+      <div class="assembler-add-row">
+        <input id="new-assembler-input" class="assembler-text-input" type="text" placeholder="Nombre del armador" maxlength="40" onkeydown="if(event.key==='Enter')addAssembler()">
+        <button class="assembler-add-btn" onclick="addAssembler()" title="Agregar armador">+</button>
+      </div>
+    </div>
     <div class="coord-section-title">Cargar pedidos</div>
     <div id="coord-hub-list"></div>
     <div class="coord-section-title" style="margin-top:28px">Reportes activos</div>
@@ -295,6 +319,12 @@
         <button class="hub-btn" onclick="pickHub(this,'MH Zapopan')" style="grid-column:span 2">MH Zapopan</button>
       </div>
       <div class="fetch-status hidden" id="fetch-status"></div>
+    </div>
+    <div class="field-group" id="assembler-group" style="display:none">
+      <label class="field-lbl">Selecciona tu nombre</label>
+      <select class="assembler-select" id="assembler-select" onchange="pickAssembler(this.value)">
+        <option value="">— Selecciona armador —</option>
+      </select>
     </div>
     <div class="db-status" id="db-status">
       <span class="db-dot loading" id="db-dot"></span>
@@ -430,7 +460,7 @@ async function sbList(prefix){
 }
 
 /* ── STATE ── */
-const S = { hub:'', items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false };
+const S = { hub:'', assembler:'', assemblers:[], items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false, _orderLoaded:false };
 
 const BC_STATUS  = { PENDING:'pending', SCANNED:'scanned', UNAVAIL:'unavail', WRONGSYS:'wrongsys', NOSYS:'nosys' };
 const ITEM_STATUS = { PENDING:'pending', COMPLETED:'completed', PARTIAL:'partial', NOBC:'nobc', WRONGSYS:'wrongsys', SKIPPED:'skipped' };
@@ -442,6 +472,49 @@ function bcMatch(scanned, system){
   // Accept if digits without leading zeros are identical (scanner adds leading 0)
   const s1=scanned.replace(/^0+/,''), s2=system.replace(/^0+/,'');
   return s1.length>0 && s1===s2;
+}
+
+/* ── SLUGIFY ── */
+function slugify(s){ return String(s).trim().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+
+/* ── ASSEMBLER MANAGEMENT ── */
+async function loadAssemblers(){
+  try{ const t=await sbFetch('assemblers.json'); S.assemblers=JSON.parse(t)||[]; }
+  catch(e){ S.assemblers=[]; }
+}
+async function saveAssemblers(){
+  try{ await sbUpload('assemblers.json',JSON.stringify(S.assemblers)); toast('✓ Lista de armadores guardada'); }
+  catch(e){ toast('❌ Error al guardar: '+e.message); }
+}
+function renderAssemblerList(){
+  const el=document.getElementById('assembler-list-items');
+  if(!el) return;
+  if(!S.assemblers.length){ el.innerHTML='<div class="coord-empty">Sin armadores registrados. Agrega uno abajo.</div>'; return; }
+  el.innerHTML=S.assemblers.map((name,i)=>`<div class="assembler-item"><span class="assembler-item-name">${escH(name)}</span><button class="coord-del-btn" onclick="removeAssembler(${i})" title="Eliminar">✕</button></div>`).join('');
+}
+async function addAssembler(){
+  const inp=document.getElementById('new-assembler-input');
+  const name=(inp?.value||'').trim();
+  if(!name){ toast('⚠ Ingresa un nombre'); inp?.focus(); return; }
+  if(S.assemblers.map(n=>n.toLowerCase()).includes(name.toLowerCase())){ toast('⚠ Ese nombre ya está en la lista'); inp?.focus(); return; }
+  S.assemblers.push(name);
+  inp.value='';
+  renderAssemblerList();
+  await saveAssemblers();
+}
+async function removeAssembler(idx){
+  S.assemblers.splice(idx,1);
+  renderAssemblerList();
+  await saveAssemblers();
+}
+function updateStartBtn(){
+  document.getElementById('start-btn').disabled=!(S.hub&&S._orderLoaded&&S.assembler);
+}
+function pickAssembler(name){
+  S.assembler=name;
+  const sel=document.getElementById('assembler-select');
+  if(sel) sel.className='assembler-select'+(name?' selected':'');
+  updateStartBtn();
 }
 
 /* ── MIN EXPIRY DATE ── */
@@ -622,8 +695,11 @@ document.getElementById('pin-modal-bg').addEventListener('click',e=>{
 function pickHub(btn, name){
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>b.classList.remove('selected'));
   btn.classList.add('selected');
-  S.hub=name; S.items=[];
+  S.hub=name; S.items=[]; S.assembler=''; S._orderLoaded=false;
   document.getElementById('start-btn').disabled=true;
+  // Hide assembler group until order is confirmed loaded
+  const agroup=document.getElementById('assembler-group');
+  if(agroup) agroup.style.display='none';
   fetchOrderForHub(name);
 }
 
@@ -645,7 +721,16 @@ async function fetchOrderForHub(hub){
     S.items=sortItems(items);
     st.className='fetch-status ok';
     st.textContent=`✓ Cargado el ${uploadDate} — ${items.length} productos`;
-    document.getElementById('start-btn').disabled=false;
+    S._orderLoaded=true;
+    // Populate and show assembler dropdown
+    const agroup=document.getElementById('assembler-group');
+    const sel=document.getElementById('assembler-select');
+    if(agroup&&sel){
+      sel.innerHTML='<option value="">— Selecciona armador —</option>'+S.assemblers.map(n=>`<option value="${escH(n)}">${escH(n)}</option>`).join('');
+      sel.value=''; sel.className='assembler-select';
+      agroup.style.display='block';
+    }
+    updateStartBtn();
   }catch(e){
     st.className='fetch-status error';
     st.textContent='⚠ No hay pedido cargado para este hub. Contacta al coordinador.';
@@ -664,6 +749,10 @@ async function loadCoordinatorScreen(){
   document.getElementById('coord-archive').style.display='none';
   document.getElementById('archive-toggle').textContent='📁 Ver historial de reportes';
   S._archiveLoaded=false; S._archiveData=[];
+
+  // Load assembler list
+  await loadAssemblers();
+  renderAssemblerList();
 
   // Fetch order status + reports for all hubs in parallel
   const hubData=await Promise.all(HUBS.map(async hub=>{
@@ -730,9 +819,15 @@ function reportDisplayInfo(name){
   const suffix=base.length>10 ? base.slice(11) : '';
   let label;
   if(!suffix) label='Armado 1';
-  else if(/^\d{2}-\d{2}$/.test(suffix)) label=suffix.replace('-',':'); // legacy format: show time
+  else if(/^\d{2}-\d{2}$/.test(suffix)) label=suffix.replace('-',':'); // legacy: time only
+  else if(/^\d{2}-\d{2}_/.test(suffix)){
+    // New format: HH-MM_AssemblerSlug — show time and assembler name
+    const timePart=suffix.slice(0,5).replace('-',':');
+    const assemblerPart=suffix.slice(6).replace(/_/g,' ');
+    label=`${timePart} — ${assemblerPart}`;
+  }
   else if(/^\d+$/.test(suffix)) label=`Armado ${suffix}`;
-  else label=suffix;
+  else label=suffix.replace(/_/g,' ');
   return {label, dateStr};
 }
 
@@ -880,9 +975,10 @@ Sin ícono — Pendiente, aún sin confirmar
 }
 
 /* ── REPORT PATH (timestamp-based, sync) ── */
-function getReportPath(hub){
+function getReportPath(hub, assembler=''){
   const t=new Date(), d=localDateStr(t), hm=t.toTimeString().slice(0,5).replace(':','-');
-  const suffix=`_${hm}`;
+  const aslug=assembler?'_'+slugify(assembler):'';
+  const suffix=`_${hm}${aslug}`;
   return {path:`reports/${HUB_SLUG[hub]}/${d}${suffix}.csv`, suffix};
 }
 
@@ -890,7 +986,7 @@ function getReportPath(hub){
 function startAssembly(){
   S.results=S.items.map(item=>{
     const bc=cleanBC(item['Código de barras']);
-    return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS, scannedBC:null, expDate:null };
+    return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS, scannedBC:null, expDate:null, confirmedAt:null };
   });
   S.listScrollY=0; buildList(); showScreen('list');
 }
@@ -1114,6 +1210,7 @@ function confirmItem(){
   if(qStr===''){ toast('⚠ Ingresa la cantidad a armar'); qField?.focus(); return; }
   const picked=parseFloat(qStr);
   if(isNaN(picked)||picked<0){ toast('⚠ Cantidad inválida'); qField?.focus(); return; }
+  result.confirmedAt=new Date();
   result.picked=picked;
   const tol=unit==='Kg'?0.05:0.5;
   if(picked===0) result.status=ITEM_STATUS.SKIPPED;
@@ -1127,6 +1224,7 @@ function markFaltante(){
   const idx=S.activeIdx;
   S.results[idx].picked=0; S.results[idx].bcStatus=BC_STATUS.PENDING;
   S.results[idx].status=ITEM_STATUS.SKIPPED; S.results[idx].expDate=null;
+  S.results[idx].confirmedAt=new Date();
   collapseDetail(); updateListRow(idx); updateListProgress();
 }
 function updateListRow(idx){
@@ -1147,13 +1245,13 @@ function requestFinish(){
 }
 function showSummary(){
   // Capture state immediately — prevents stale/empty data if newOrder() fires before upload
-  const hub=S.hub, items=S.items, results=S.results;
+  const hub=S.hub, assembler=S.assembler, items=S.items, results=S.results;
   const total=items.length;
   const ok=results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
   const partial=results.filter(r=>[ITEM_STATUS.PARTIAL,ITEM_STATUS.NOBC,ITEM_STATUS.WRONGSYS].includes(r.status)).length;
   const skipped=results.filter(r=>r.status===ITEM_STATUS.SKIPPED).length;
   const now=new Date();
-  document.getElementById('sum-hub-p').textContent=`${hub} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`;
+  document.getElementById('sum-hub-p').textContent=`${hub}${assembler?' · '+assembler:''} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`;
   document.getElementById('st-total').textContent=total;
   document.getElementById('st-ok').textContent=ok;
   document.getElementById('st-part').textContent=partial;
@@ -1171,19 +1269,22 @@ function showSummary(){
   showScreen('summary');
   saveToHistory();
   // Upload immediately with captured state — no async gap where S.* could be cleared
-  const {path, suffix}=getReportPath(hub);
-  const {csv}=generateCSV(items, results, hub, suffix);
+  const {path, suffix}=getReportPath(hub, assembler);
+  const {csv}=generateCSV(items, results, hub, assembler, suffix);
   sbUpload(path, csv).catch(e=>console.warn('Report upload failed (non-critical):',e));
 }
 
 /* ── CSV GENERATION ── */
-function generateCSV(items, results, hub, fileSuffix=''){
+function generateCSV(items, results, hub, assembler='', fileSuffix=''){
   const now=new Date();
-  const date=now.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
-  const time=now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  const headers=['Hub','Fecha','Hora','Posición armado','Producto','Código en sistema','Código físico escaneado','Unidad','Solicitado','Armado','Verificación código','Estado','Fecha vencimiento'];
+  const headers=['Hub','Armador','Fecha','Hora','Posición armado','Producto','Código en sistema','Código físico escaneado','Unidad','Solicitado','Armado','Verificación código','Estado','Fecha vencimiento'];
   const rows=items.map((item,i)=>{
-    const r=results[i], unit=item['Kg/Pz']||'Pz', rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
+    const r=results[i];
+    // Use the moment the item was confirmed; fall back to report-generation time for pending items
+    const rowTime=r.confirmedAt||now;
+    const date=rowTime.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const time=rowTime.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    const unit=item['Kg/Pz']||'Pz', rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
     const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
     const pick=r.picked!==null?(unit==='Kg'?Number(r.picked).toFixed(2):Math.round(r.picked)):'';
     const sysBC=cleanBC(item['Código de barras']), physBC=r.scannedBC||(r.bcStatus===BC_STATUS.SCANNED?sysBC:'');
@@ -1191,7 +1292,7 @@ function generateCSV(items, results, hub, fileSuffix=''){
     const estado={[ITEM_STATUS.COMPLETED]:'Completo',[ITEM_STATUS.PARTIAL]:'Parcial',[ITEM_STATUS.NOBC]:'Parcial (BC ilegible)',[ITEM_STATUS.WRONGSYS]:'Parcial (discrepancia de código)',[ITEM_STATUS.SKIPPED]:'Faltante',[ITEM_STATUS.PENDING]:'Pendiente'}[r.status]||'Pendiente';
     const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
     const expOut=r.expDate==='N/A'?'Sin fecha de vencimiento':(r.expDate||'');
-    return [hub,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,pick,bcVerify,estado,expOut];
+    return [hub,assembler,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,pick,bcVerify,estado,expOut];
   });
   const csv=[headers,...rows].map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const hubSlug=hub.replace(/\s+/g,'_');
@@ -1209,7 +1310,7 @@ function triggerDownload(csv, filename){
 const HISTORY_KEY='calii_order_history';
 function saveToHistory(){
   try{
-    const {csv,filename,now}=generateCSV(S.items,S.results,S.hub);
+    const {csv,filename,now}=generateCSV(S.items,S.results,S.hub,S.assembler);
     const today=localDateStr(now);
     let h=[]; try{ h=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]'); }catch(_){}
     h=h.filter(e=>e.date===today);
@@ -1223,9 +1324,11 @@ function saveToHistory(){
 
 /* ── NEW ORDER ── */
 function newOrder(){
-  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub='';
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false;
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
+  const agroup=document.getElementById('assembler-group');
+  if(agroup){ agroup.style.display='none'; const sel=document.getElementById('assembler-select'); if(sel){ sel.value=''; sel.className='assembler-select'; } }
   document.getElementById('start-btn').disabled=true;
   showScreen('home');
 }
@@ -1258,6 +1361,7 @@ window.addEventListener('beforeunload',e=>{ if(S.items.length>0&&!document.query
 
 /* ── BOOT ── */
 loadImageDB();
+loadAssemblers();
 </script>
 </body>
 </html>
