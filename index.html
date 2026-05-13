@@ -278,7 +278,9 @@
     <button class="back-text-btn" onclick="loadCoordinatorScreen()" title="Actualizar">↺</button>
   </div>
   <div class="coord-body">
-    <div class="coord-section-title" style="margin-top:0">Armadores</div>
+    <div class="coord-section-title" style="margin-top:0">Cargar pedidos</div>
+    <div id="coord-hub-list"></div>
+    <div class="coord-section-title" style="margin-top:28px">Armadores</div>
     <div class="assembler-mgr-box">
       <div id="assembler-list-items"><div class="coord-empty">Cargando…</div></div>
       <div class="assembler-add-row">
@@ -286,8 +288,6 @@
         <button class="assembler-add-btn" onclick="addAssembler()" title="Agregar armador">+</button>
       </div>
     </div>
-    <div class="coord-section-title">Cargar pedidos</div>
-    <div id="coord-hub-list"></div>
     <div class="coord-section-title" style="margin-top:28px">Reportes activos</div>
     <div id="coord-reports"></div>
     <div style="margin-top:20px;text-align:center">
@@ -483,8 +483,13 @@ async function loadAssemblers(){
   catch(e){ S.assemblers=[]; }
 }
 async function saveAssemblers(){
-  try{ await sbUpload('assemblers.json',JSON.stringify(S.assemblers)); toast('✓ Lista de armadores guardada'); }
-  catch(e){ toast('❌ Error al guardar: '+e.message); }
+  try{
+    // Supabase Storage only grants INSERT (not UPDATE) to anon.
+    // Delete first so the subsequent upload is always a fresh INSERT.
+    try{ await sbDelete('assemblers.json'); }catch(_){}
+    await sbUpload('assemblers.json', JSON.stringify(S.assemblers));
+    toast('✓ Lista de armadores guardada');
+  }catch(e){ toast('❌ Error al guardar: '+e.message); }
 }
 function renderAssemblerList(){
   const el=document.getElementById('assembler-list-items');
@@ -508,7 +513,8 @@ async function removeAssembler(idx){
   await saveAssemblers();
 }
 function updateStartBtn(){
-  document.getElementById('start-btn').disabled=!(S.hub&&S._orderLoaded&&S.assembler);
+  const needsAssembler=S.assemblers.length>0;
+  document.getElementById('start-btn').disabled=!(S.hub&&S._orderLoaded&&(!needsAssembler||S.assembler));
 }
 function pickAssembler(name){
   S.assembler=name;
@@ -722,13 +728,18 @@ async function fetchOrderForHub(hub){
     st.className='fetch-status ok';
     st.textContent=`✓ Cargado el ${uploadDate} — ${items.length} productos`;
     S._orderLoaded=true;
-    // Populate and show assembler dropdown
+    // Always re-fetch the assembler list here so it's guaranteed fresh
+    await loadAssemblers();
     const agroup=document.getElementById('assembler-group');
     const sel=document.getElementById('assembler-select');
-    if(agroup&&sel){
+    if(agroup&&sel&&S.assemblers.length){
       sel.innerHTML='<option value="">— Selecciona armador —</option>'+S.assemblers.map(n=>`<option value="${escH(n)}">${escH(n)}</option>`).join('');
       sel.value=''; sel.className='assembler-select';
       agroup.style.display='block';
+    } else if(agroup){
+      // No assemblers configured — hide dropdown and allow direct start
+      agroup.style.display='none';
+      S.assembler='';
     }
     updateStartBtn();
   }catch(e){

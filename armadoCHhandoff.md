@@ -10,7 +10,8 @@ Mobile-friendly web app for assembling inter-hub orders at Calii (Mexican grocer
 - **Repo**: `https://github.com/joseromero-crypto/armado-CH`
 - **Branch**: `main` — Netlify auto-deploys on push
 - **Local dev**: `cd ~/Desktop/armado-CH && python3 -m http.server 8080` → `http://localhost:8080`
-- **Deploy workflow**: edit files → `git add . && git commit -m "..." && git push`
+- **Deploy workflow**: `cd ~/Desktop/armado-CH && find .git -name "*.lock" -delete 2>/dev/null; git add . && git commit -m "..." && git push`
+  - The `find .git -name "*.lock" -delete` prefix clears stale lock files that can appear after interrupted git operations or sandbox usage
 
 ## File Structure
 ```
@@ -42,8 +43,9 @@ BUCKET  = 'solcitudesarmado'  // NOTE: intentional typo — matches actual bucke
 | Type | Path |
 |------|------|
 | Order (coordinator uploads) | `orders/{hub-slug}/{YYYY-MM-DD}.csv` |
-| Report (auto-saved on finish) | `reports/{hub-slug}/{YYYY-MM-DD}_{HH-MM}.csv` |
+| Report (auto-saved on finish) | `reports/{hub-slug}/{YYYY-MM-DD}_{HH-MM}_{AssemblerSlug}.csv` |
 | Coordinator PIN | `coordinator_pin.txt` (bucket root) |
+| Assembler list | `assemblers.json` (bucket root) |
 
 ### Hub slugs
 | Display name | Slug |
@@ -60,6 +62,7 @@ BUCKET  = 'solcitudesarmado'  // NOTE: intentional typo — matches actual bucke
 - Bucket: `solcitudesarmado` (public bucket)
 - Policies: **INSERT + SELECT + DELETE** for `anon` role, definition: `bucket_id = 'solcitudesarmado'`
 - DELETE policy is required for the report and order delete buttons to work
+- **Important**: there is NO UPDATE policy for anon. Any file that needs to be overwritten (e.g. `assemblers.json`) must be **deleted then re-inserted** — do not rely on `x-upsert:true` for existing files, as Supabase treats upsert of an existing object as UPDATE and will return HTTP 400
 
 ### Coordinator PIN
 - Stored as a plain-text file at the **root** of the bucket: `coordinator_pin.txt`
@@ -83,15 +86,16 @@ BUCKET  = 'solcitudesarmado'  // NOTE: intentional typo — matches actual bucke
 
 ### Coordinator flow
 - PIN entry required on first access each session
-- Uploads CSV per hub via file picker
-- Badge shows last upload date (e.g. `✓ 2026-05-07`) or `Sin pedido`
-- 🗑 button next to each hub clears the uploaded order (with confirmation modal)
+- **Cargar pedidos**: uploads CSV per hub via file picker; badge shows last upload date or `Sin pedido`; 🗑 clears the order (with confirmation modal)
+- **Armadores**: list of assembler names stored in Supabase (`assemblers.json`). Coordinator types a name + Enter or taps `+` to add; taps `✕` to remove. Loaded and re-rendered every time the coordinator screen opens. Save uses delete-then-insert to work around the missing UPDATE policy.
 - **Active reports**: reports generated since the last upload for each hub — shown with ⬇ and 🗑 buttons
 - **Archived reports**: all older reports — collapsible section ("📁 Ver historial"), shown dimmed
 - Reports are never auto-deleted from Supabase — full history preserved
 
 ### Assembler flow
 - Selects hub → app lists `orders/{hub-slug}/` and fetches the **latest** file (not date-restricted)
+- After hub loads successfully, assembler list is re-fetched from Supabase and a name dropdown appears
+- Assembler selects their name; **start button requires both hub + name** (unless no assemblers are configured — in that case start is allowed without a name)
 - Status message shows: `✓ Cargado el {YYYY-MM-DD} — N productos`
 - On finish: report auto-uploaded to Supabase; assembler taps "Terminar armado" → home
 - No download button for assemblers
@@ -213,26 +217,35 @@ function parsePos(raw) {
 ---
 
 ## Report CSV (output)
-Columns: `Hub, Fecha, Hora, Posición armado, Producto, Código en sistema, Código físico escaneado, Unidad, Solicitado, Armado, Verificación código, Estado, Fecha vencimiento`
+Columns: `Hub, Armador, Fecha, Hora, Posición armado, Producto, Código en sistema, Código físico escaneado, Unidad, Solicitado, Armado, Verificación código, Estado, Fecha vencimiento`
 
+- Column `Armador` — name selected by the assembler in the setup screen; blank if no assembler list is configured
+- Column `Hora` — time the **individual item** was confirmed or marked faltante (not the report generation time). Items left pending fall back to report generation time.
 - Column `Fecha vencimiento` — assembler-entered expiry date (DD/MM/AAAA), `Sin fecha de vencimiento` if bypassed, blank if faltante/pending
 - Column previously named `Recogido` — renamed to `Armado`
 - BOM (`﻿`) prepended for Excel compatibility
-- Auto-uploaded to Supabase on `showSummary()` via `getReportPath(hub)` (sync, timestamp-based)
-- Download filename: `{Hub_slug}_{YYYY-MM-DD}_{HH-MM}.csv`
-- State is captured in **local variables** at the start of `showSummary` before upload — prevents race condition where `newOrder()` clears global state mid-async
+- Auto-uploaded to Supabase on `showSummary()` via `getReportPath(hub, assembler)` (sync, timestamp-based)
+- Download filename: `{Hub_slug}_{YYYY-MM-DD}_{HH-MM}_{AssemblerSlug}.csv`
+- Coordinator report display label: `HH:MM — Assembler Name` (parsed from filename by `reportDisplayInfo()`)
+- Date and time in filenames use **local Mexico time** (via `localDateStr()` helper) — not UTC
+- State (`hub`, `assembler`, `items`, `results`) is captured in **local variables** at the start of `showSummary` before upload — prevents race condition where `newOrder()` clears global state mid-async
 - Also saved to localStorage as a silent backup (not shown in UI)
+
+### Per-item timestamp
+Each result object carries `confirmedAt: Date | null`. Set in `confirmItem()` and `markFaltante()` at the moment of action. `generateCSV()` uses `r.confirmedAt || now` per row to populate `Fecha` and `Hora`. This means the report accurately reflects when each item was handled, not when the assembler pressed "Finalizar".
 
 ---
 
 ## Supabase API Functions
 ```js
-sbUpload(path, content)   // POST with x-upsert:true — creates or overwrites
+sbUpload(path, content)   // POST with x-upsert:true — safe for new files; see UPDATE note below
 sbFetch(path)             // GET public URL (no auth required)
 sbList(prefix)            // POST list, limit 500, sorted by name desc
 sbDelete(path)            // DELETE /storage/v1/object/{BUCKET}/{path} — requires DELETE policy
 ```
-**Important**: `sbDelete` uses the single-object endpoint (`DELETE .../object/{bucket}/{path}`), NOT the batch `/object/delete/{bucket}` prefixes endpoint. The prefixes endpoint treats paths as folder prefixes, not exact filenames, and will return "object not found" for exact file paths.
+**Important — `sbDelete`**: uses the single-object endpoint (`DELETE .../object/{bucket}/{path}`), NOT the batch `/object/delete/{bucket}` prefixes endpoint. The prefixes endpoint treats paths as folder prefixes and returns "object not found" for exact file paths.
+
+**Important — overwriting files**: `sbUpload` with `x-upsert:true` triggers an UPDATE check when the file already exists. Since the anon policy has no UPDATE grant, this returns HTTP 400. For any file written repeatedly to the same path (currently only `assemblers.json`), the pattern is: `sbDelete` first (ignore 404), then `sbUpload`.
 
 ---
 
@@ -282,7 +295,19 @@ Scanners behave as keyboard input + Enter key. The barcode input field (`#bc-fie
 - `imagedb.json` fetch fails on `file://` — expected, use `python3 -m http.server 8080` locally
 - localStorage backup is device-specific; coordinator uses Supabase reports for cross-device access
 - Coordinator PIN is security-by-obscurity only (anon key is public in JS); sufficient for internal use
-- `todayStr()` uses UTC — edge case if app is used right at midnight in MX timezone
+
+### Timezone fix (May 2026)
+Mexico operates on permanent CST (UTC-6) with no daylight saving. Any assembly completed at or after 18:00 local would roll the UTC clock past midnight, causing report filenames to show the next calendar day with a "future" timestamp. Fixed by adding `localDateStr(d)` helper that builds `YYYY-MM-DD` from local date fields (`getFullYear/getMonth/getDate`) instead of `toISOString()`. All four date-stamping locations were updated: `todayStr()`, `getReportPath()`, `generateCSV()`, and `saveToHistory()`.
+
+### Assembler feature (May 2026)
+- Coordinator manages a named list of assemblers saved as `assemblers.json` in the bucket root
+- Assembler selects their name from a dropdown after picking a hub; start button gated on both selections
+- Assembler list is re-fetched inside `fetchOrderForHub` (not just at boot) to avoid a race condition where the boot fetch hadn't completed before the user picked a hub
+- `slugify(name)` helper converts the assembler name to a safe filename segment (strips diacritics, replaces non-alphanumeric with `_`)
+- `reportDisplayInfo(filename)` parses the new `HH-MM_Slug` suffix pattern and displays it as `HH:MM — Name` in the coordinator panel; legacy `HH-MM`-only filenames still display as `HH:MM`
+- `generateCSV` signature: `(items, results, hub, assembler='', fileSuffix='')` — assembler is the 2nd-to-last parameter; all callers pass it explicitly
+- `getReportPath` signature: `(hub, assembler='')` — appends `_slug` to the time suffix when assembler is provided
+- Per-item `confirmedAt` timestamp added to result objects; set in `confirmItem()` and `markFaltante()`, used per-row in `generateCSV()`
 
 ---
 
