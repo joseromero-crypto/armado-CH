@@ -43,7 +43,8 @@ BUCKET  = 'solcitudesarmado'  // NOTE: intentional typo — matches actual bucke
 | Type | Path |
 |------|------|
 | Order (coordinator uploads) | `orders/{hub-slug}/{YYYY-MM-DD}.csv` |
-| Report (auto-saved on finish) | `reports/{hub-slug}/{YYYY-MM-DD}_{HH-MM}_{AssemblerSlug}.csv` |
+| Report (auto-saved on finish) | `reports/{hub-slug}/{YYYY-MM-DD}_{HH-MM}_{AssemblerSlugs}.csv` |
+| Partial save (in-progress assembly) | `partials/{hub-slug}/{YYYY-MM-DD}.json` |
 | Coordinator PIN | `coordinator_pin.txt` (bucket root) |
 | Assembler list | `assemblers.json` (bucket root) |
 
@@ -94,8 +95,10 @@ BUCKET  = 'solcitudesarmado'  // NOTE: intentional typo — matches actual bucke
 
 ### Assembler flow
 - Selects hub → app lists `orders/{hub-slug}/` and fetches the **latest** file (not date-restricted)
-- After hub loads successfully, assembler list is re-fetched from Supabase and a name dropdown appears
-- Assembler selects their name; **start button requires both hub + name** (unless no assemblers are configured — in that case start is allowed without a name)
+- After hub loads, app immediately checks for a partial save for that hub (see Partial Save below)
+- If a partial exists, a yellow banner appears with **"↩ Continuar pedido"** and **"Nuevo armado"** buttons; **"Iniciar Armado" is disabled** until the user resolves the banner
+- Assembler list is re-fetched from Supabase and a name dropdown appears; start button requires both hub + name (unless no assemblers are configured)
+- "Continuar pedido" requires a name to be selected first (if assembler list is configured) — toasts if not
 - Status message shows: `✓ Cargado el {YYYY-MM-DD} — N productos`
 - On finish: report auto-uploaded to Supabase; assembler taps "Terminar armado" → home
 - No download button for assemblers
@@ -219,13 +222,13 @@ function parsePos(raw) {
 ## Report CSV (output)
 Columns: `Hub, Armador, Fecha, Hora, Posición armado, Producto, Código en sistema, Código físico escaneado, Unidad, Solicitado, Armado, Verificación código, Estado, Fecha vencimiento`
 
-- Column `Armador` — name selected by the assembler in the setup screen; blank if no assembler list is configured
+- Column `Armador` — **per-item**: whichever assembler confirmed that row (`r.assembler`); falls back to the session assembler for any pending items. Supports multi-assembler orders.
 - Column `Hora` — time the **individual item** was confirmed or marked faltante (not the report generation time). Items left pending fall back to report generation time.
 - Column `Fecha vencimiento` — assembler-entered expiry date (DD/MM/AAAA), `Sin fecha de vencimiento` if bypassed, blank if faltante/pending
 - Column previously named `Recogido` — renamed to `Armado`
 - BOM (`﻿`) prepended for Excel compatibility
-- Auto-uploaded to Supabase on `showSummary()` via `getReportPath(hub, assembler)` (sync, timestamp-based)
-- Download filename: `{Hub_slug}_{YYYY-MM-DD}_{HH-MM}_{AssemblerSlug}.csv`
+- Auto-uploaded to Supabase on `showSummary()` via `getReportPath(hub, assemblerSlug)` (sync, timestamp-based)
+- Download filename: `{Hub_slug}_{YYYY-MM-DD}_{HH-MM}_{AssemblerSlugs}.csv` — when multiple assemblers worked the order their slugs are joined alphabetically (e.g. `Diego_Jose`)
 - Coordinator report display label: `HH:MM — Assembler Name` (parsed from filename by `reportDisplayInfo()`)
 - Date and time in filenames use **local Mexico time** (via `localDateStr()` helper) — not UTC
 - State (`hub`, `assembler`, `items`, `results`) is captured in **local variables** at the start of `showSummary` before upload — prevents race condition where `newOrder()` clears global state mid-async
@@ -255,6 +258,14 @@ Key: `calii_order_history`
 - Each entry: `{ id, date, hub, total, ok, skipped, time, filename, csv }`
 - Silent fallback only — not shown in UI
 - Primary storage is Supabase
+
+### Partial save key
+Key: `calii_partial_{hubSlug}` (e.g. `calii_partial_mh_contry`)
+- One entry per hub; overwritten on every item confirm/faltante
+- Payload: `{ hub, items, results, savedAt, orderDate }` — results include `assembler` per item and `confirmedAt` as ISO string
+- Mirrored to Supabase at `partials/{hub-slug}/{YYYY-MM-DD}.json` for cross-device access (delete-then-insert pattern, fire-and-forget)
+- Validated on load: rejected if `orderDate` ≠ today or `items` is empty
+- Deleted automatically on `showSummary()` (order finished) and `startAssembly()` (user chose fresh start)
 
 ---
 
@@ -305,9 +316,22 @@ Mexico operates on permanent CST (UTC-6) with no daylight saving. Any assembly c
 - Assembler list is re-fetched inside `fetchOrderForHub` (not just at boot) to avoid a race condition where the boot fetch hadn't completed before the user picked a hub
 - `slugify(name)` helper converts the assembler name to a safe filename segment (strips diacritics, replaces non-alphanumeric with `_`)
 - `reportDisplayInfo(filename)` parses the new `HH-MM_Slug` suffix pattern and displays it as `HH:MM — Name` in the coordinator panel; legacy `HH-MM`-only filenames still display as `HH:MM`
-- `generateCSV` signature: `(items, results, hub, assembler='', fileSuffix='')` — assembler is the 2nd-to-last parameter; all callers pass it explicitly
-- `getReportPath` signature: `(hub, assembler='')` — appends `_slug` to the time suffix when assembler is provided
+- `generateCSV` signature: `(items, results, hub, assembler='', fileSuffix='')` — `assembler` is the session assembler (fallback for pending rows); per-confirmed-item assembler comes from `r.assembler`
+- `getReportPath` signature: `(hub, assemblerSlug='')` — takes a **pre-slugified** string (output of `getAssemblersSlug`); does NOT apply `slugify()` internally
+- `getAssemblersSlug(results, fallback='')` — collects all unique `r.assembler` values from results, sorts alphabetically, joins with `_`; used in `showSummary()` to build the filename slug
 - Per-item `confirmedAt` timestamp added to result objects; set in `confirmItem()` and `markFaltante()`, used per-row in `generateCSV()`
+- Per-item `assembler` field added to result objects; set in `confirmItem()` and `markFaltante()` to `S.assembler` at the moment of action
+
+### Partial save / resume feature (May 2026)
+- Assembly progress is auto-saved to localStorage + Supabase on every item confirm or faltante
+- One partial save per hub per day — keyed by hub only, not by assembler, so any assembler can resume any hub's in-progress order
+- When a hub is selected and the order loads, `checkForPartialSave()` runs immediately; if a partial exists for today a yellow banner shows: who has worked on it, how many items are done, and the last-saved time
+- Banner buttons: **"↩ Continuar pedido"** (resumes with current assembler going forward) and **"Nuevo armado"** (discards partial and re-enables the start button)
+- **"Iniciar Armado" button is disabled** while the banner is visible — re-enabled only after "Nuevo armado" is tapped. Prevents accidental overwrite.
+- `resumePartialSave()` restores `S.items` and `S.results` (with ISO timestamps converted back to Date objects via `restoreDates()`); does not override `S.assembler` — the current session assembler continues from where the previous one left off
+- `discardPartialSave()` removes the entry from both localStorage and Supabase (fire-and-forget delete), then calls `updateStartBtn()` to re-enable the button
+- `startAssembly()` calls `clearPartialSave()` before initialising fresh results, so clicking "Iniciar Armado" after discarding via the banner is always safe
+- `showSummary()` and `newOrder()` also call `clearPartialSave()` so no stale partials remain after an order is completed or abandoned
 
 ---
 

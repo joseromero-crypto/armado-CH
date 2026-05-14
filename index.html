@@ -248,6 +248,14 @@
     .assembler-select{width:100%;padding:13px 14px;border:2px solid var(--gray-300);border-radius:var(--radius-sm);font-size:15px;font-weight:600;color:var(--gray-900);background:white;-webkit-appearance:none;cursor:pointer;transition:border-color .15s,background .15s}
     .assembler-select:focus{outline:none;border-color:var(--green)}
     .assembler-select.selected{border-color:var(--green);background:var(--green-light)}
+
+    /* PARTIAL SAVE NOTICE */
+    .partial-notice{background:#FFF8E1;border:1.5px solid #FFA000;border-radius:var(--radius-sm);padding:14px 16px}
+    .partial-notice-title{font-size:14px;font-weight:700;color:#E65100;margin-bottom:4px}
+    .partial-notice-sub{font-size:12px;color:#7a4f00;margin-bottom:12px}
+    .partial-notice-btns{display:flex;gap:8px}
+    .partial-resume-btn{flex:2;padding:10px;border-radius:var(--radius-sm);border:none;background:var(--green);color:white;font-size:14px;font-weight:700;cursor:pointer}
+    .partial-discard-btn{flex:1;padding:10px;border-radius:var(--radius-sm);border:1.5px solid var(--gray-300);background:white;color:var(--gray-600);font-size:13px;font-weight:600;cursor:pointer}
   </style>
 </head>
 <body>
@@ -320,6 +328,7 @@
       </div>
       <div class="fetch-status hidden" id="fetch-status"></div>
     </div>
+    <div id="partial-save-notice" style="display:none;margin-bottom:16px"></div>
     <div class="field-group" id="assembler-group" style="display:none">
       <label class="field-lbl">Selecciona tu nombre</label>
       <select class="assembler-select" id="assembler-select" onchange="pickAssembler(this.value)">
@@ -514,7 +523,9 @@ async function removeAssembler(idx){
 }
 function updateStartBtn(){
   const needsAssembler=S.assemblers.length>0;
-  document.getElementById('start-btn').disabled=!(S.hub&&S._orderLoaded&&(!needsAssembler||S.assembler));
+  // Disable start button while a partial is showing — user must choose Continue or Nuevo armado first
+  const blockedByPartial=!!_pendingPartial;
+  document.getElementById('start-btn').disabled=blockedByPartial||!(S.hub&&S._orderLoaded&&(!needsAssembler||S.assembler));
 }
 function pickAssembler(name){
   S.assembler=name;
@@ -703,6 +714,9 @@ function pickHub(btn, name){
   btn.classList.add('selected');
   S.hub=name; S.items=[]; S.assembler=''; S._orderLoaded=false;
   document.getElementById('start-btn').disabled=true;
+  // Reset partial notice when hub changes
+  _pendingPartial=null;
+  const pn=document.getElementById('partial-save-notice'); if(pn){ pn.style.display='none'; pn.innerHTML=''; }
   // Hide assembler group until order is confirmed loaded
   const agroup=document.getElementById('assembler-group');
   if(agroup) agroup.style.display='none';
@@ -742,6 +756,8 @@ async function fetchOrderForHub(hub){
       S.assembler='';
     }
     updateStartBtn();
+    // Check for any in-progress partial for this hub (any assembler can resume)
+    checkForPartialSave();
   }catch(e){
     st.className='fetch-status error';
     st.textContent='⚠ No hay pedido cargado para este hub. Contacta al coordinador.';
@@ -985,19 +1001,33 @@ Sin ícono — Pendiente, aún sin confirmar
 📭 Sin código — producto sin código registrado`);
 }
 
+/* ── MULTI-ASSEMBLER SLUG ── */
+// Collects all unique assembler names from confirmed results and builds a combined slug.
+// The slug is already-safe (no re-slugifying needed) so getReportPath takes it as-is.
+function getAssemblersSlug(results, fallback=''){
+  const names=[...new Set(results.filter(r=>r.assembler).map(r=>r.assembler))].sort();
+  if(!names.length&&fallback) names.push(fallback);
+  return names.map(n=>slugify(n)).join('_');
+}
+
 /* ── REPORT PATH (timestamp-based, sync) ── */
-function getReportPath(hub, assembler=''){
+// assemblerSlug is already-slugified (output of getAssemblersSlug) — no internal slugify applied
+function getReportPath(hub, assemblerSlug=''){
   const t=new Date(), d=localDateStr(t), hm=t.toTimeString().slice(0,5).replace(':','-');
-  const aslug=assembler?'_'+slugify(assembler):'';
+  const aslug=assemblerSlug?'_'+assemblerSlug:'';
   const suffix=`_${hm}${aslug}`;
   return {path:`reports/${HUB_SLUG[hub]}/${d}${suffix}.csv`, suffix};
 }
 
 /* ── START ── */
 function startAssembly(){
+  // User chose to start fresh — discard any in-progress partial for this hub
+  if(S.hub){ clearPartialSave(S.hub); }
+  _pendingPartial=null;
+  const pn=document.getElementById('partial-save-notice'); if(pn){ pn.style.display='none'; pn.innerHTML=''; }
   S.results=S.items.map(item=>{
     const bc=cleanBC(item['Código de barras']);
-    return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS, scannedBC:null, expDate:null, confirmedAt:null };
+    return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS, scannedBC:null, expDate:null, confirmedAt:null, assembler:null };
   });
   S.listScrollY=0; buildList(); showScreen('list');
 }
@@ -1222,6 +1252,7 @@ function confirmItem(){
   const picked=parseFloat(qStr);
   if(isNaN(picked)||picked<0){ toast('⚠ Cantidad inválida'); qField?.focus(); return; }
   result.confirmedAt=new Date();
+  result.assembler=S.assembler;
   result.picked=picked;
   const tol=unit==='Kg'?0.05:0.5;
   if(picked===0) result.status=ITEM_STATUS.SKIPPED;
@@ -1230,13 +1261,16 @@ function confirmItem(){
   else if(Math.abs(picked-reqQ)<=tol) result.status=ITEM_STATUS.COMPLETED;
   else result.status=ITEM_STATUS.PARTIAL;
   collapseDetail(); updateListRow(idx); updateListProgress();
+  savePartialProgress();
 }
 function markFaltante(){
   const idx=S.activeIdx;
   S.results[idx].picked=0; S.results[idx].bcStatus=BC_STATUS.PENDING;
   S.results[idx].status=ITEM_STATUS.SKIPPED; S.results[idx].expDate=null;
   S.results[idx].confirmedAt=new Date();
+  S.results[idx].assembler=S.assembler;
   collapseDetail(); updateListRow(idx); updateListProgress();
+  savePartialProgress();
 }
 function updateListRow(idx){
   const row=document.getElementById(`item-row-${idx}`);
@@ -1277,10 +1311,13 @@ function showSummary(){
     const expNote=r.expDate?` · Venc: ${r.expDate}`:'';
     return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}${expNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
   }).join('');
+  clearPartialSave(hub);
   showScreen('summary');
   saveToHistory();
   // Upload immediately with captured state — no async gap where S.* could be cleared
-  const {path, suffix}=getReportPath(hub, assembler);
+  // Slug includes all unique assemblers who worked the order (e.g. "Jose_Diego")
+  const aslug=getAssemblersSlug(results, assembler);
+  const {path, suffix}=getReportPath(hub, aslug);
   const {csv}=generateCSV(items, results, hub, assembler, suffix);
   sbUpload(path, csv).catch(e=>console.warn('Report upload failed (non-critical):',e));
 }
@@ -1303,7 +1340,9 @@ function generateCSV(items, results, hub, assembler='', fileSuffix=''){
     const estado={[ITEM_STATUS.COMPLETED]:'Completo',[ITEM_STATUS.PARTIAL]:'Parcial',[ITEM_STATUS.NOBC]:'Parcial (BC ilegible)',[ITEM_STATUS.WRONGSYS]:'Parcial (discrepancia de código)',[ITEM_STATUS.SKIPPED]:'Faltante',[ITEM_STATUS.PENDING]:'Pendiente'}[r.status]||'Pendiente';
     const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
     const expOut=r.expDate==='N/A'?'Sin fecha de vencimiento':(r.expDate||'');
-    return [hub,assembler,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,pick,bcVerify,estado,expOut];
+    // Per-item assembler: whoever confirmed this item; fall back to session assembler for pending rows
+    const rowAssembler=r.assembler||assembler;
+    return [hub,rowAssembler,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,pick,bcVerify,estado,expOut];
   });
   const csv=[headers,...rows].map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const hubSlug=hub.replace(/\s+/g,'_');
@@ -1335,6 +1374,9 @@ function saveToHistory(){
 
 /* ── NEW ORDER ── */
 function newOrder(){
+  const _hub=S.hub;
+  if(_hub) clearPartialSave(_hub);
+  _pendingPartial=null;
   _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false;
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
@@ -1369,6 +1411,109 @@ function escH(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 
 /* ── UNLOAD GUARD ── */
 window.addEventListener('beforeunload',e=>{ if(S.items.length>0&&!document.querySelector('#screen-summary.active')){ e.preventDefault(); e.returnValue=''; } });
+
+/* ── PARTIAL SAVE (auto-progress) ── */
+const PARTIAL_LS_PREFIX='calii_partial_';
+let _pendingPartial=null;
+
+// Keys are hub-only — one partial per hub per day, any assembler can pick it up
+function partialKey(hub){ return PARTIAL_LS_PREFIX+slugify(hub); }
+function partialSbPath(hub){ return `partials/${HUB_SLUG[hub]}/${todayStr()}.json`; }
+
+function savePartialProgress(){
+  if(!S.hub||!S.items.length) return;
+  const payload={
+    hub:S.hub, items:S.items,
+    results:S.results.map(r=>({...r,confirmedAt:r.confirmedAt?r.confirmedAt.toISOString():null})),
+    savedAt:new Date().toISOString(), orderDate:todayStr()
+  };
+  try{ localStorage.setItem(partialKey(S.hub),JSON.stringify(payload)); }catch(_){}
+  savePartialToSupabase(payload).catch(()=>{});
+}
+
+async function savePartialToSupabase(payload){
+  const path=partialSbPath(payload.hub);
+  try{ await sbDelete(path); }catch(_){}
+  await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`,{
+    method:'POST',
+    headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','x-upsert':'true'},
+    body:JSON.stringify(payload)
+  });
+}
+
+async function loadPartialProgress(hub){
+  // 1. localStorage first (fast, works offline)
+  try{
+    const raw=localStorage.getItem(partialKey(hub));
+    if(raw){ const p=JSON.parse(raw); if(p.hub===hub&&p.orderDate===todayStr()&&p.items?.length) return p; }
+  }catch(_){}
+  // 2. Supabase (cross-device)
+  try{
+    const raw=await sbFetch(partialSbPath(hub));
+    const p=JSON.parse(raw);
+    if(p.hub===hub&&p.orderDate===todayStr()&&p.items?.length) return p;
+  }catch(_){}
+  return null;
+}
+
+function clearPartialSave(hub){
+  try{ localStorage.removeItem(partialKey(hub)); }catch(_){}
+  sbDelete(partialSbPath(hub)).catch(()=>{});
+}
+
+function restoreDates(results){ return results.map(r=>({...r,confirmedAt:r.confirmedAt?new Date(r.confirmedAt):null})); }
+
+async function checkForPartialSave(){
+  const hub=S.hub;
+  const notice=document.getElementById('partial-save-notice');
+  if(!notice||!hub||!S._orderLoaded) return;
+  notice.style.display='none'; notice.innerHTML='';
+  const partial=await loadPartialProgress(hub);
+  // Guard: user may have switched hub while we were awaiting
+  if(!partial||S.hub!==hub) return;
+  _pendingPartial=partial;
+  updateStartBtn(); // disables Iniciar Armado while partial is pending
+  const done=partial.results.filter(r=>r.status!=='pending').length, total=partial.results.length;
+  const pct=total?Math.round(done/total*100):0;
+  const savedTime=partial.savedAt?new Date(partial.savedAt).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):'';
+  // Show which assemblers have worked on this order so far
+  const workers=[...new Set(partial.results.filter(r=>r.assembler).map(r=>r.assembler))];
+  const workerStr=workers.length?' · '+workers.join(', '):'';
+  notice.innerHTML=`<div class="partial-notice">
+    <div class="partial-notice-title">📂 Pedido en progreso${workerStr}</div>
+    <div class="partial-notice-sub">${done} de ${total} productos (${pct}%)${savedTime?' · Guardado a las '+savedTime:''}</div>
+    <div class="partial-notice-btns">
+      <button class="partial-resume-btn" onclick="resumePartialSave()">↩ Continuar pedido</button>
+      <button class="partial-discard-btn" onclick="discardPartialSave()">Nuevo armado</button>
+    </div>
+  </div>`;
+  notice.style.display='block';
+}
+
+function resumePartialSave(){
+  if(!_pendingPartial) return;
+  // If assembler list is configured, require a name before resuming
+  if(S.assemblers.length>0&&!S.assembler){
+    toast('⚠ Selecciona tu nombre para continuar');
+    document.getElementById('assembler-select')?.focus();
+    return;
+  }
+  S.hub=_pendingPartial.hub;
+  S.items=_pendingPartial.items;
+  S.results=restoreDates(_pendingPartial.results);
+  S._orderLoaded=true; _pendingPartial=null;
+  document.getElementById('partial-save-notice').style.display='none';
+  buildList(); showScreen('list');
+}
+
+function discardPartialSave(){
+  const hub=_pendingPartial?_pendingPartial.hub:S.hub;
+  if(hub) clearPartialSave(hub);
+  _pendingPartial=null;
+  const notice=document.getElementById('partial-save-notice');
+  if(notice){ notice.style.display='none'; notice.innerHTML=''; }
+  updateStartBtn(); // re-enables Iniciar Armado now that partial is gone
+}
 
 /* ── BOOT ── */
 loadImageDB();
