@@ -44,7 +44,7 @@ BUCKET  = 'solcitudesarmado'  // NOTE: intentional typo — matches actual bucke
 |------|------|
 | Order (coordinator uploads) | `orders/{hub-slug}/{YYYY-MM-DD}.csv` |
 | Report (auto-saved on finish) | `reports/{hub-slug}/{YYYY-MM-DD}_{HH-MM}_{AssemblerSlugs}.csv` |
-| Partial save (in-progress assembly) | `partials/{hub-slug}/{YYYY-MM-DD}.json` |
+| Partial save (in-progress assembly) | `partials/{hub-slug}/{order-file-date}.json` |
 | Coordinator PIN | `coordinator_pin.txt` (bucket root) |
 | Assembler list | `assemblers.json` (bucket root) |
 
@@ -220,10 +220,11 @@ function parsePos(raw) {
 ---
 
 ## Report CSV (output)
-Columns: `Hub, Armador, Fecha, Hora, Posición armado, Producto, Código en sistema, Código físico escaneado, Unidad, Solicitado, Armado, Verificación código, Estado, Fecha vencimiento`
+Columns: `Hub, Armador, Fecha, Hora, Posición armado, Producto, Código en sistema, Código físico escaneado, Unidad, Solicitado, Inventario CH, Armado, Verificación código, Estado, Fecha vencimiento`
 
 - Column `Armador` — **per-item**: whichever assembler confirmed that row (`r.assembler`); falls back to the session assembler for any pending items. Supports multi-assembler orders.
 - Column `Hora` — time the **individual item** was confirmed or marked faltante (not the report generation time). Items left pending fall back to report generation time.
+- Column `Inventario CH` — value of `Inventario hub saliente` from the order CSV; blank if not present
 - Column `Fecha vencimiento` — assembler-entered expiry date (DD/MM/AAAA), `Sin fecha de vencimiento` if bypassed, blank if faltante/pending
 - Column previously named `Recogido` — renamed to `Armado`
 - BOM (`﻿`) prepended for Excel compatibility
@@ -263,9 +264,12 @@ Key: `calii_order_history`
 Key: `calii_partial_{hubSlug}` (e.g. `calii_partial_mh_contry`)
 - One entry per hub; overwritten on every item confirm/faltante
 - Payload: `{ hub, items, results, savedAt, orderDate }` — results include `assembler` per item and `confirmedAt` as ISO string
-- Mirrored to Supabase at `partials/{hub-slug}/{YYYY-MM-DD}.json` for cross-device access (delete-then-insert pattern, fire-and-forget)
-- Validated on load: rejected if `orderDate` ≠ today or `items` is empty
-- Deleted automatically on `showSummary()` (order finished) and `startAssembly()` (user chose fresh start)
+- `orderDate` is the **order file date** (`S.orderDate`, set from the CSV filename when the order loads) — NOT today's date
+- Mirrored to Supabase at `partials/{hub-slug}/{orderDate}.json` for cross-device access (delete-then-insert pattern, fire-and-forget)
+- Validated on load: rejected if `orderDate` ≠ `S.orderDate` (the currently loaded order's date) or `items` is empty
+- Partials persist across calendar days as long as the same order file is active — a partial for Condesa uploaded on May 13 will still resume on May 14, 15, etc.
+- Becomes stale (silently ignored) only when the coordinator uploads a new order file for that hub (different date)
+- Deleted automatically on `showSummary()` (order finished), `startAssembly()` (user chose fresh start), and `discardPartialSave()` (banner discard)
 
 ---
 
@@ -324,14 +328,30 @@ Mexico operates on permanent CST (UTC-6) with no daylight saving. Any assembly c
 
 ### Partial save / resume feature (May 2026)
 - Assembly progress is auto-saved to localStorage + Supabase on every item confirm or faltante
-- One partial save per hub per day — keyed by hub only, not by assembler, so any assembler can resume any hub's in-progress order
-- When a hub is selected and the order loads, `checkForPartialSave()` runs immediately; if a partial exists for today a yellow banner shows: who has worked on it, how many items are done, and the last-saved time
+- One partial save per hub — keyed by hub only, not by assembler, so any assembler can resume any hub's in-progress order
+- When a hub is selected and the order loads, `checkForPartialSave()` runs immediately; if a matching partial exists a yellow banner shows: who has worked on it, how many items are done, and the last-saved time
 - Banner buttons: **"↩ Continuar pedido"** (resumes with current assembler going forward) and **"Nuevo armado"** (discards partial and re-enables the start button)
 - **"Iniciar Armado" button is disabled** while the banner is visible — re-enabled only after "Nuevo armado" is tapped. Prevents accidental overwrite.
 - `resumePartialSave()` restores `S.items` and `S.results` (with ISO timestamps converted back to Date objects via `restoreDates()`); does not override `S.assembler` — the current session assembler continues from where the previous one left off
 - `discardPartialSave()` removes the entry from both localStorage and Supabase (fire-and-forget delete), then calls `updateStartBtn()` to re-enable the button
 - `startAssembly()` calls `clearPartialSave()` before initialising fresh results, so clicking "Iniciar Armado" after discarding via the banner is always safe
 - `showSummary()` and `newOrder()` also call `clearPartialSave()` so no stale partials remain after an order is completed or abandoned
+- `S.orderDate` — added to global state; set in `fetchOrderForHub` from the CSV filename (`uploadDate`). Used as the partial's identity key and Supabase path date. Reset to `''` on `newOrder()` and `saveAndExit()`.
+
+#### Race condition fix (`_partialSaveSeq`)
+`savePartialToSupabase` is fire-and-forget with two async steps (DELETE then POST). Without protection, a POST from an earlier save could land after `clearPartialSave` runs and re-create a stale partial in Supabase. Fix: a module-level `_partialSaveSeq` integer. `savePartialProgress` increments it and stamps the current value into the upload call. `clearPartialSave` also increments it. Before the POST step, `savePartialToSupabase` checks `if(seq !== _partialSaveSeq) return` — if anything newer intervened, the upload is aborted.
+
+### Save and exit (May 2026)
+- **💾 button** in the list screen header (between ❓ and "Finalizar pedido")
+- `requestSaveAndExit()` — shows a confirmation modal with current progress count
+- `saveAndExit()` — calls `savePartialProgress()` to flush to localStorage + Supabase, then resets all `S.*` state (including `S.orderDate`) and navigates home. Does **not** call `clearPartialSave` — the partial is intentionally kept for later resumption.
+
+### Coordinator partial warning on upload (May 2026)
+- `checkPartialThenUpload(hub, text, items, badge)` — inserted between CSV parse and `doUpload` in the upload flow
+- Lists `partials/{hub-slug}/` in Supabase; if any `.json` files exist, shows a blocking modal: *"Existe un armado en progreso para este hub…"*
+- On confirm: deletes all partial files for that hub, then proceeds to `doUpload`
+- On cancel: upload is aborted, existing order and partial are untouched
+- Also applies when the suspicious-barcode modal is confirmed (both checks run sequentially)
 
 ---
 

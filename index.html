@@ -352,6 +352,7 @@
     <div class="list-header-row">
       <span class="list-hub" id="list-hub">—</span>
       <button class="finish-hdr-btn" onclick="showLegend()" style="border-color:var(--gray-300);color:var(--gray-600);margin-right:4px" title="Leyenda">❓</button>
+      <button class="finish-hdr-btn" onclick="requestSaveAndExit()" style="border-color:var(--gray-300);color:var(--gray-600);margin-right:4px" title="Guardar y salir">💾</button>
       <button class="finish-hdr-btn" onclick="requestFinish()">Finalizar pedido</button>
       <span class="list-prog-label" id="list-prog-label">0/0</span>
     </div>
@@ -469,7 +470,7 @@ async function sbList(prefix){
 }
 
 /* ── STATE ── */
-const S = { hub:'', assembler:'', assemblers:[], items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false, _orderLoaded:false };
+const S = { hub:'', assembler:'', assemblers:[], items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false, _orderLoaded:false, orderDate:'' };
 
 const BC_STATUS  = { PENDING:'pending', SCANNED:'scanned', UNAVAIL:'unavail', WRONGSYS:'wrongsys', NOSYS:'nosys' };
 const ITEM_STATUS = { PENDING:'pending', COMPLETED:'completed', PARTIAL:'partial', NOBC:'nobc', WRONGSYS:'wrongsys', SKIPPED:'skipped' };
@@ -741,7 +742,7 @@ async function fetchOrderForHub(hub){
     S.items=sortItems(items);
     st.className='fetch-status ok';
     st.textContent=`✓ Cargado el ${uploadDate} — ${items.length} productos`;
-    S._orderLoaded=true;
+    S._orderLoaded=true; S.orderDate=uploadDate;
     // Always re-fetch the assembler list here so it's guaranteed fresh
     await loadAssemblers();
     const agroup=document.getElementById('assembler-group');
@@ -912,7 +913,7 @@ async function uploadHubCSV(input, hub){
         `Se detectaron ${suspicious.length} código${suspicious.length>1?'s':''} de barras que terminan en múltiples ceros — señal de pérdida de precisión al exportar como número desde Google Sheets o Excel.\n\n${examples}${extra}\n\nSe recomienda re-exportar con la columna de códigos como formato Texto. ¿Subir de todas formas?`,
         'Subir de todas formas',
         'm-danger',
-        ()=>doUpload(hub, text, items, badge)
+        ()=>checkPartialThenUpload(hub, text, items, badge)
       );
       document.getElementById('m-cancel').onclick=()=>{
         if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Sin pedido'; }
@@ -920,7 +921,7 @@ async function uploadHubCSV(input, hub){
       };
       return;
     }
-    await doUpload(hub, text, items, badge);
+    await checkPartialThenUpload(hub, text, items, badge);
   }catch(e){
     if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Error'; }
     toast('❌ Error: '+e.message);
@@ -937,6 +938,26 @@ async function doUpload(hub, text, items, badge){
     if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Error'; }
     toast('❌ Error al subir: '+e.message);
   }
+}
+
+async function checkPartialThenUpload(hub, text, items, badge){
+  try{
+    const partialFiles=(await sbList(`partials/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.json'));
+    if(partialFiles.length>0){
+      showModal(
+        '⚠ Armado en progreso',
+        `Existe un armado en progreso para ${hub}. Al subir este archivo se borrará el progreso existente.\n\n¿Deseas continuar?`,
+        'Subir y borrar progreso',
+        'm-danger',
+        async ()=>{
+          await Promise.all(partialFiles.map(f=>sbDelete(`partials/${HUB_SLUG[hub]}/${f.name}`).catch(()=>{})));
+          await doUpload(hub, text, items, badge);
+        }
+      );
+      return;
+    }
+  }catch(_){}
+  await doUpload(hub, text, items, badge);
 }
 
 function clearHubOrder(path, hub, dateLabel){
@@ -1325,7 +1346,7 @@ function showSummary(){
 /* ── CSV GENERATION ── */
 function generateCSV(items, results, hub, assembler='', fileSuffix=''){
   const now=new Date();
-  const headers=['Hub','Armador','Fecha','Hora','Posición armado','Producto','Código en sistema','Código físico escaneado','Unidad','Solicitado','Armado','Verificación código','Estado','Fecha vencimiento'];
+  const headers=['Hub','Armador','Fecha','Hora','Posición armado','Producto','Código en sistema','Código físico escaneado','Unidad','Solicitado','Inventario CH','Armado','Verificación código','Estado','Fecha vencimiento'];
   const rows=items.map((item,i)=>{
     const r=results[i];
     // Use the moment the item was confirmed; fall back to report-generation time for pending items
@@ -1340,9 +1361,10 @@ function generateCSV(items, results, hub, assembler='', fileSuffix=''){
     const estado={[ITEM_STATUS.COMPLETED]:'Completo',[ITEM_STATUS.PARTIAL]:'Parcial',[ITEM_STATUS.NOBC]:'Parcial (BC ilegible)',[ITEM_STATUS.WRONGSYS]:'Parcial (discrepancia de código)',[ITEM_STATUS.SKIPPED]:'Faltante',[ITEM_STATUS.PENDING]:'Pendiente'}[r.status]||'Pendiente';
     const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
     const expOut=r.expDate==='N/A'?'Sin fecha de vencimiento':(r.expDate||'');
+    const invCH=String(item['Inventario hub saliente']||'').trim();
     // Per-item assembler: whoever confirmed this item; fall back to session assembler for pending rows
     const rowAssembler=r.assembler||assembler;
-    return [hub,rowAssembler,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,pick,bcVerify,estado,expOut];
+    return [hub,rowAssembler,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,invCH,pick,bcVerify,estado,expOut];
   });
   const csv=[headers,...rows].map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const hubSlug=hub.replace(/\s+/g,'_');
@@ -1372,12 +1394,40 @@ function saveToHistory(){
   }catch(e){ console.warn('History save failed:',e); }
 }
 
+/* ── SAVE AND EXIT ── */
+function requestSaveAndExit(){
+  collapseDetail();
+  const done=S.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
+  const total=S.items.length;
+  showModal(
+    '💾 Guardar y salir',
+    `Se guardará el progreso actual (${done}/${total} productos completados).\n\nPodrás retomar este pedido más tarde desde el mismo hub.`,
+    'Guardar y salir',
+    'm-ok',
+    saveAndExit
+  );
+}
+function saveAndExit(){
+  savePartialProgress();
+  const done=S.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
+  const total=S.items.length;
+  _pendingPartial=null;
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate='';
+  document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
+  document.getElementById('fetch-status').className='fetch-status hidden';
+  const agroup=document.getElementById('assembler-group');
+  if(agroup){ agroup.style.display='none'; const sel=document.getElementById('assembler-select'); if(sel){ sel.value=''; sel.className='assembler-select'; } }
+  document.getElementById('start-btn').disabled=true;
+  showScreen('home');
+  setTimeout(()=>toast(`✓ Progreso guardado — ${done}/${total} productos completados`),100);
+}
+
 /* ── NEW ORDER ── */
 function newOrder(){
-  const _hub=S.hub;
-  if(_hub) clearPartialSave(_hub);
+  const _hub=S.hub, _orderDate=S.orderDate;
+  if(_hub) clearPartialSave(_hub, _orderDate);
   _pendingPartial=null;
-  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false;
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate='';
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
   const agroup=document.getElementById('assembler-group');
@@ -1415,25 +1465,33 @@ window.addEventListener('beforeunload',e=>{ if(S.items.length>0&&!document.query
 /* ── PARTIAL SAVE (auto-progress) ── */
 const PARTIAL_LS_PREFIX='calii_partial_';
 let _pendingPartial=null;
+// Sequence counter — incremented on every save and on every clear.
+// savePartialToSupabase checks that its seq still matches before the final POST,
+// so a clear that arrives between the DELETE and POST steps wins and the stale upload is dropped.
+let _partialSaveSeq=0;
 
-// Keys are hub-only — one partial per hub per day, any assembler can pick it up
+// Keys are hub-only — one partial per hub, any assembler can pick it up
 function partialKey(hub){ return PARTIAL_LS_PREFIX+slugify(hub); }
-function partialSbPath(hub){ return `partials/${HUB_SLUG[hub]}/${todayStr()}.json`; }
+// Path keyed by order file date (not today) so partials survive across calendar days
+function partialSbPath(hub, orderDate){ return `partials/${HUB_SLUG[hub]}/${orderDate}.json`; }
 
 function savePartialProgress(){
-  if(!S.hub||!S.items.length) return;
+  if(!S.hub||!S.items.length||!S.orderDate) return;
+  const seq=++_partialSaveSeq;
   const payload={
     hub:S.hub, items:S.items,
     results:S.results.map(r=>({...r,confirmedAt:r.confirmedAt?r.confirmedAt.toISOString():null})),
-    savedAt:new Date().toISOString(), orderDate:todayStr()
+    savedAt:new Date().toISOString(), orderDate:S.orderDate
   };
   try{ localStorage.setItem(partialKey(S.hub),JSON.stringify(payload)); }catch(_){}
-  savePartialToSupabase(payload).catch(()=>{});
+  savePartialToSupabase(payload,seq).catch(()=>{});
 }
 
-async function savePartialToSupabase(payload){
-  const path=partialSbPath(payload.hub);
+async function savePartialToSupabase(payload, seq){
+  const path=partialSbPath(payload.hub, payload.orderDate);
   try{ await sbDelete(path); }catch(_){}
+  // If a clear or a newer save happened while we were awaiting the DELETE, abort the upload
+  if(seq!==_partialSaveSeq) return;
   await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`,{
     method:'POST',
     headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','x-upsert':'true'},
@@ -1441,36 +1499,38 @@ async function savePartialToSupabase(payload){
   });
 }
 
-async function loadPartialProgress(hub){
+async function loadPartialProgress(hub, orderDate){
   // 1. localStorage first (fast, works offline)
   try{
     const raw=localStorage.getItem(partialKey(hub));
-    if(raw){ const p=JSON.parse(raw); if(p.hub===hub&&p.orderDate===todayStr()&&p.items?.length) return p; }
+    if(raw){ const p=JSON.parse(raw); if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return p; }
   }catch(_){}
-  // 2. Supabase (cross-device)
+  // 2. Supabase (cross-device) — path is keyed by order date so old orders don't interfere
   try{
-    const raw=await sbFetch(partialSbPath(hub));
+    const raw=await sbFetch(partialSbPath(hub, orderDate));
     const p=JSON.parse(raw);
-    if(p.hub===hub&&p.orderDate===todayStr()&&p.items?.length) return p;
+    if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return p;
   }catch(_){}
   return null;
 }
 
-function clearPartialSave(hub){
+function clearPartialSave(hub, orderDate){
+  _partialSaveSeq++; // invalidates any in-flight savePartialToSupabase for this hub
   try{ localStorage.removeItem(partialKey(hub)); }catch(_){}
-  sbDelete(partialSbPath(hub)).catch(()=>{});
+  const od=orderDate||S.orderDate;
+  if(od) sbDelete(partialSbPath(hub, od)).catch(()=>{});
 }
 
 function restoreDates(results){ return results.map(r=>({...r,confirmedAt:r.confirmedAt?new Date(r.confirmedAt):null})); }
 
 async function checkForPartialSave(){
-  const hub=S.hub;
+  const hub=S.hub, orderDate=S.orderDate;
   const notice=document.getElementById('partial-save-notice');
-  if(!notice||!hub||!S._orderLoaded) return;
+  if(!notice||!hub||!S._orderLoaded||!orderDate) return;
   notice.style.display='none'; notice.innerHTML='';
-  const partial=await loadPartialProgress(hub);
-  // Guard: user may have switched hub while we were awaiting
-  if(!partial||S.hub!==hub) return;
+  const partial=await loadPartialProgress(hub, orderDate);
+  // Guard: user may have switched hub or a different order was loaded while we were awaiting
+  if(!partial||S.hub!==hub||S.orderDate!==orderDate) return;
   _pendingPartial=partial;
   updateStartBtn(); // disables Iniciar Armado while partial is pending
   const done=partial.results.filter(r=>r.status!=='pending').length, total=partial.results.length;
@@ -1508,7 +1568,8 @@ function resumePartialSave(){
 
 function discardPartialSave(){
   const hub=_pendingPartial?_pendingPartial.hub:S.hub;
-  if(hub) clearPartialSave(hub);
+  const od=_pendingPartial?_pendingPartial.orderDate:S.orderDate;
+  if(hub) clearPartialSave(hub, od);
   _pendingPartial=null;
   const notice=document.getElementById('partial-save-notice');
   if(notice){ notice.style.display='none'; notice.innerHTML=''; }
