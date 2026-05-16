@@ -188,6 +188,11 @@
     .sum-qty{font-size:12px;color:var(--gray-500);margin-top:2px}
     .sum-pos{font-size:11px;color:var(--gray-400);font-family:monospace;flex-shrink:0}
     .sum-actions{padding:14px 16px 28px;background:white;box-shadow:0 -2px 12px rgba(0,0,0,.08);display:flex;flex-direction:column;gap:10px}
+    .sum-upload-status{font-size:13px;text-align:center;padding:6px 12px;border-radius:8px;margin-bottom:2px;min-height:28px}
+    .sum-upload-status.uploading{background:var(--green-light);color:var(--green-dark)}
+    .sum-upload-status.ok{background:#e6f9f7;color:#007a6e}
+    .sum-upload-status.fail{background:#fff3f3;color:#c0392b}
+    .btn-retry{margin-left:8px;padding:2px 10px;border-radius:6px;border:1px solid #c0392b;background:white;color:#c0392b;font-size:12px;cursor:pointer}
 
     /* MODAL */
     .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;padding:20px}
@@ -390,7 +395,8 @@
   </div>
   <div class="sum-list" id="sum-list"></div>
   <div class="sum-actions">
-    <button class="btn btn-primary" onclick="newOrder()">Terminar armado</button>
+    <div id="sum-upload-status" class="sum-upload-status"></div>
+    <button id="btn-terminar" class="btn btn-primary" onclick="newOrder()" disabled>Terminar armado</button>
   </div>
 </div>
 
@@ -1340,7 +1346,30 @@ function showSummary(){
   const aslug=getAssemblersSlug(results, assembler);
   const {path, suffix}=getReportPath(hub, aslug);
   const {csv}=generateCSV(items, results, hub, assembler, suffix);
-  sbUpload(path, csv).catch(e=>console.warn('Report upload failed (non-critical):',e));
+
+  const statusEl=document.getElementById('sum-upload-status');
+  const finishBtn=document.getElementById('btn-terminar');
+
+  async function attemptUpload(){
+    statusEl.className='sum-upload-status uploading';
+    statusEl.textContent='☁️ Guardando reporte…';
+    finishBtn.disabled=true;
+    _retryUploadFn=null;
+    try{
+      await sbUpload(path, csv);
+      statusEl.className='sum-upload-status ok';
+      statusEl.textContent='✅ Reporte guardado correctamente';
+      finishBtn.disabled=false;
+    } catch(e){
+      console.warn('Report upload failed:',e);
+      statusEl.className='sum-upload-status fail';
+      statusEl.innerHTML='❌ Error al guardar el reporte. <button class="btn-retry" onclick="retryUpload()">Reintentar</button>';
+      _retryUploadFn=attemptUpload;
+      finishBtn.disabled=false;
+      finishBtn.textContent='Terminar sin guardar ⚠️';
+    }
+  }
+  attemptUpload();
 }
 
 /* ── CSV GENERATION ── */
@@ -1469,6 +1498,8 @@ let _pendingPartial=null;
 // savePartialToSupabase checks that its seq still matches before the final POST,
 // so a clear that arrives between the DELETE and POST steps wins and the stale upload is dropped.
 let _partialSaveSeq=0;
+let _retryUploadFn=null;
+function retryUpload(){ if(_retryUploadFn) _retryUploadFn(); }
 
 // Keys are hub-only — one partial per hub, any assembler can pick it up
 function partialKey(hub){ return PARTIAL_LS_PREFIX+slugify(hub); }
