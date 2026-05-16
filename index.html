@@ -1338,7 +1338,9 @@ function showSummary(){
     const expNote=r.expDate?` · Venc: ${r.expDate}`:'';
     return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}${expNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
   }).join('');
-  clearPartialSave(hub);
+  // NOTE: clearPartialSave is intentionally NOT called here yet.
+  // The partial (100% complete) is kept alive until the upload confirms.
+  // If upload fails the assembler can close the app and re-enter to retry.
   showScreen('summary');
   saveToHistory();
   // Upload immediately with captured state — no async gap where S.* could be cleared
@@ -1357,16 +1359,22 @@ function showSummary(){
     _retryUploadFn=null;
     try{
       await sbUpload(path, csv);
+      // Only clear the partial once we know the report is safely in Supabase
+      clearPartialSave(hub);
       statusEl.className='sum-upload-status ok';
       statusEl.textContent='✅ Reporte guardado correctamente';
+      finishBtn.textContent='Terminar armado';
+      finishBtn.onclick=newOrder;
       finishBtn.disabled=false;
     } catch(e){
       console.warn('Report upload failed:',e);
       statusEl.className='sum-upload-status fail';
-      statusEl.innerHTML='❌ Error al guardar el reporte. <button class="btn-retry" onclick="retryUpload()">Reintentar</button>';
+      statusEl.innerHTML='❌ Error al guardar el reporte. <button class="btn-retry" onclick="retryUpload()">Reintentar</button><span style="font-size:11px;display:block;margin-top:6px;color:#888">Tu progreso está guardado. Puedes salir y volver a entrar para finalizar.</span>';
       _retryUploadFn=attemptUpload;
+      // Button goes home WITHOUT clearing the partial — assembler can re-enter and retry
+      finishBtn.textContent='Salir (reporte pendiente)';
+      finishBtn.onclick=exitKeepingPartial;
       finishBtn.disabled=false;
-      finishBtn.textContent='Terminar sin guardar ⚠️';
     }
   }
   attemptUpload();
@@ -1449,6 +1457,21 @@ function saveAndExit(){
   document.getElementById('start-btn').disabled=true;
   showScreen('home');
   setTimeout(()=>toast(`✓ Progreso guardado — ${done}/${total} productos completados`),100);
+}
+
+/* ── EXIT WITHOUT CLEARING PARTIAL (used when report upload failed) ── */
+// Resets session state and goes home, but intentionally leaves the partial save intact.
+// The 100%-complete partial lets the assembler re-enter and retry finalizing later.
+function exitKeepingPartial(){
+  _pendingPartial=null;
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate='';
+  document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
+  document.getElementById('fetch-status').className='fetch-status hidden';
+  const agroup=document.getElementById('assembler-group');
+  if(agroup){ agroup.style.display='none'; const sel=document.getElementById('assembler-select'); if(sel){ sel.value=''; sel.className='assembler-select'; } }
+  document.getElementById('start-btn').disabled=true;
+  showScreen('home');
+  setTimeout(()=>toast('⚠️ Pedido guardado — entra de nuevo al hub para finalizar y guardar el reporte'),100);
 }
 
 /* ── NEW ORDER ── */
