@@ -2372,11 +2372,14 @@ async function loadInvToday(){
     });
   });
 
-  const conflicts=Object.values(sku).map(s=>{
+  const scored=Object.values(sku).map(s=>{
     const pedido=Object.values(s.byHub).reduce((a,b)=>a+b,0);
     const hubs=Object.keys(s.byHub).length;
     return {...s, pedido, hubs, faltan: (s.inv!=null? pedido-s.inv : null)};
-  }).filter(s=>s.inv!=null && s.faltan>0).sort((a,b)=>b.faltan-a.faltan);
+  });
+  // Only real contention: some stock exists and demand exceeds it. Inv 0 = out of stock (see no_surtido), not a fight.
+  const conflicts=scored.filter(s=>s.inv>0 && s.faltan>0).sort((a,b)=>b.faltan-a.faltan);
+  const sinInvCount=scored.filter(s=>s.inv===0 && s.faltan>0).length;
 
   // 2. Today's faltantes from the picks table
   let faltRows=[];
@@ -2410,9 +2413,10 @@ async function loadInvToday(){
     }).join('');
   }
 
-  const confHtml = conflicts.length
+  const sinInvNote = sinInvCount ? `<div class="coord-empty">+ ${sinInvCount} SKU${sinInvCount>1?'s':''} sin inventario — ver 📄 No surtido</div>` : '';
+  const confHtml = (conflicts.length
     ? conflicts.map(s=>`<div class="invrow"><b>${escH(s.producto)}</b><span>Inv ${s.inv} · pedido ${s.pedido} en ${s.hubs} hub${s.hubs>1?'s':''} · <span style="color:var(--red)">faltan ${_round1(s.faltan)}</span></span></div>`).join('')
-    : '<div class="coord-empty">Ningún SKU con demanda mayor al inventario.</div>';
+    : '<div class="coord-empty">Ningún SKU con stock disputado.</div>') + sinInvNote;
 
   body.innerHTML=`
     <div class="invsub-title">⚠️ Conflictos de inventario — hoy</div>${confHtml}
@@ -2699,7 +2703,10 @@ async function openRegistro(path, hub, dateStr){
   // r2 reports start with a "# COMPLEMENTO" comment line — Papa skips it if we drop leading '#'
   const clean=csv.split(/\r?\n/).filter(l=>!l.startsWith('#')).join('\r\n');
   const p=Papa.parse(clean,{header:true,dynamicTyping:false,skipEmptyLines:true});
-  const rows=p.data.filter(r=>r['Producto']).map((r,i)=>{
+  const all=p.data.filter(r=>r['Producto']);
+  // Pendiente rows were never touched — nothing to type. Keep count, exclude from the list.
+  const sinArmar=all.filter(r=>(r['Estado']||'')==='Pendiente').length;
+  const rows=all.filter(r=>(r['Estado']||'')!=='Pendiente').map((r,i)=>{
     const unit=r['Unidad']||'Pz';
     const armado=parseFloat(r['Armado'])||0;
     const solicitado=parseFloat(r['Solicitado'])||0;
@@ -2713,7 +2720,7 @@ async function openRegistro(path, hub, dateStr){
 
   let ticks=[];
   try{ ticks=JSON.parse(localStorage.getItem(regTicksKey(path))||'[]')||[]; }catch(_){}
-  _regState={ path, hub, dateStr, rows, ticks:new Set(ticks) };
+  _regState={ path, hub, dateStr, rows, sinArmar, ticks:new Set(ticks) };
   renderRegistro();
 }
 
@@ -2733,9 +2740,12 @@ function renderRegistro(){
       ${r.exc?`<span class="reg-tag">${escH(r.estado)}</span>`:''}
     </label>`;
 
+  const sinArmar=_regState.sinArmar||0;
   document.getElementById('reg-list').innerHTML=`
     ${revisar.length?`<div class="reg-sect">⚠️ Revisar — ${revisar.length}</div>${revisar.map(rowHtml).join('')}`:''}
-    ${completos.length?`<div class="reg-sect">✅ Completos — ${completos.length}</div>${completos.map(rowHtml).join('')}`:''}`;
+    ${completos.length?`<div class="reg-sect">✅ Completos — ${completos.length}</div>${completos.map(rowHtml).join('')}`:''}
+    ${sinArmar?`<div class="reg-sect">⏳ Sin armar — ${sinArmar}</div><div class="coord-empty" style="padding:10px 12px">No se armaron — nada que capturar. Genera un complemento si hay inventario nuevo.</div>`:''}
+    ${!rows.length?`<div class="coord-empty">Este reporte no tiene productos armados.</div>`:''}`;
 }
 
 function toggleRegTick(key){
