@@ -73,7 +73,10 @@
     .coord-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--gray-600);margin-bottom:12px;margin-top:28px}
     .coord-section-title:first-child{margin-top:0}
     .coord-hub-row{display:flex;align-items:center;gap:10px;background:white;border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow-sm)}
-    .coord-hub-name{flex:1;font-weight:600;font-size:15px}
+    .coord-hub-name{flex:1;font-weight:600;font-size:15px;min-width:0}
+    .coord-hub-sub{display:block;font-weight:600;font-size:11px;color:var(--gray-500);margin-top:2px}
+    .coord-nosurt-btn{background:var(--orange-light);border:1px solid var(--orange);color:var(--orange);border-radius:var(--radius-sm);padding:7px 9px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;white-space:nowrap;line-height:1}
+    .coord-nosurt-btn:active{opacity:.8}
     .coord-hub-badge{font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px}
     .coord-hub-badge.loaded{background:var(--green-light);color:var(--green-dark)}
     .coord-hub-badge.empty{background:var(--gray-100);color:var(--gray-500)}
@@ -103,10 +106,13 @@
     .metrics-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:white}
     .metrics-table{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
     .metrics-table th,.metrics-table td{padding:8px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--gray-200)}
-    .metrics-table th:first-child,.metrics-table td:first-child,
+    .metrics-table th:first-child,.metrics-table td:first-child{text-align:center;padding:8px 4px;position:sticky;left:0;background:white;z-index:2}
+    .metrics-table thead th:first-child{background:var(--gray-100);z-index:3}
+    .metrics-table tbody tr.irregular td:first-child{background:#fff}
     .metrics-table th:nth-child(2),.metrics-table td:nth-child(2),
     .metrics-table th:nth-child(3),.metrics-table td:nth-child(3),
-    .metrics-table th:nth-child(4),.metrics-table td:nth-child(4){text-align:left}
+    .metrics-table th:nth-child(4),.metrics-table td:nth-child(4),
+    .metrics-table th:nth-child(5),.metrics-table td:nth-child(5){text-align:left}
     .metrics-table thead th{position:sticky;top:0;background:var(--gray-100);font-weight:700;color:var(--gray-700);cursor:pointer;user-select:none;z-index:1}
     .metrics-table thead th:hover{background:var(--gray-200)}
     .metrics-table thead th .sort-ind{color:var(--green);font-weight:800;margin-left:2px}
@@ -116,8 +122,8 @@
     .metrics-table tfoot td{font-weight:800;color:var(--gray-900);background:var(--gray-100);border-top:2px solid var(--gray-300);border-bottom:none}
     .metrics-foot-note{font-size:11px;color:var(--gray-500);font-weight:600;padding:6px 2px}
     .metrics-empty{padding:28px 16px;text-align:center;color:var(--gray-500);font-size:14px}
-    .metric-del{background:none;border:none;cursor:pointer;font-size:13px;opacity:.5;padding:2px 4px}
-    .metric-del:hover{opacity:1}
+    .metric-del{background:var(--gray-100);border:1px solid var(--gray-300);border-radius:5px;cursor:pointer;font-size:13px;opacity:.75;padding:3px 5px;line-height:1}
+    .metric-del:hover{opacity:1;border-color:var(--red);background:var(--red-light)}
 
     /* LIST */
     .list-header{background:white;box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:20}
@@ -416,7 +422,7 @@
 <!-- METRICS (coordinator) -->
 <div id="screen-metrics" class="screen">
   <div class="coord-header">
-    <button class="back-text-btn" onclick="showScreen('coordinator')">←</button>
+    <button class="back-text-btn" onclick="showScreen('coordinator');loadCoordinatorScreen()">←</button>
     <h2>Métricas de armado</h2>
     <button class="back-text-btn" onclick="loadMetrics(true)" title="Actualizar todo">↺</button>
   </div>
@@ -443,7 +449,7 @@
 <!-- REGISTRO — copiloto de registro (§3.7) -->
 <div id="screen-registro" class="screen">
   <div class="coord-header">
-    <button class="back-text-btn" onclick="showScreen('coordinator')">←</button>
+    <button class="back-text-btn" onclick="showScreen('coordinator');loadCoordinatorScreen()">←</button>
     <h2 id="reg-title">Registro</h2>
     <button class="back-text-btn" onclick="downloadRegistroCSV()" title="Descargar CSV">⬇</button>
   </div>
@@ -496,6 +502,7 @@
 <div id="screen-list" class="screen">
   <div class="list-header">
     <div class="list-header-row">
+      <button class="back-text-btn" onclick="cancelOrBack()" title="Salir">←</button>
       <span class="list-hub" id="list-hub">—</span>
       <button class="revisar-hdr-chip" id="revisar-hdr-chip" onclick="scrollToRevisar()" style="display:none" title="Faltantes que otro armador sí encontró">🔁 0</button>
       <button class="finish-hdr-btn" onclick="showLegend()" style="border-color:var(--gray-300);color:var(--gray-600);margin-right:4px" title="Leyenda">❓</button>
@@ -511,8 +518,8 @@
 <!-- SUMMARY -->
 <div id="screen-summary" class="screen">
   <div class="sum-hero">
-    <div class="check">✅</div>
-    <h1>Pedido Completado</h1>
+    <div class="check" id="sum-check">✅</div>
+    <h1 id="sum-title">Resumen del armado</h1>
     <p id="sum-hub-p">—</p>
   </div>
   <div class="sum-stats">
@@ -524,7 +531,8 @@
   <div class="sum-list" id="sum-list"></div>
   <div class="sum-actions">
     <div id="sum-upload-status" class="sum-upload-status"></div>
-    <button id="btn-terminar" class="btn btn-primary" onclick="newOrder()" disabled>Terminar armado</button>
+    <button id="btn-seguir" class="btn btn-outline" onclick="backToListFromSummary()">← Seguir armando</button>
+    <button id="btn-terminar" class="btn btn-primary" onclick="finalizeAssembly()">Terminar armado</button>
   </div>
 </div>
 
@@ -1065,9 +1073,12 @@ async function loadCoordinatorScreen(){
     const dateLabel=latestOrder?.name?.replace('.csv','')||'';
     const orderFilePath=latestOrder?`orders/${HUB_SLUG[hub]}/${latestOrder.name}`:'';
     const clearBtn=loaded?`<button class="coord-del-btn" onclick="clearHubOrder('${escH(orderFilePath)}','${escH(hub)}','${escH(dateLabel)}')" title="Eliminar pedido cargado">🗑</button>`:'';
-    const noSurtidoBtn=loaded?`<button class="coord-del-btn" onclick="downloadNoSurtido('${escH(hub)}','${escH(dateLabel)}')" title="Descargar SKUs no surtidos (reserva)">📄</button>`:'';
+    const noSurtidoBtn=loaded?`<button class="coord-nosurt-btn" onclick="downloadNoSurtido('${escH(hub)}','${escH(dateLabel.replace('-r2',''))}')" title="Descargar SKUs no surtidos (reserva)">📄 No surtido</button>`:'';
+    // counts remembered from this device's last upload (falls back to the date alone)
+    let sub='';
+    try{ const c=JSON.parse(localStorage.getItem('calii_ordercount_'+HUB_SLUG[hub])||'null'); if(c&&c.date===dateLabel) sub=` · ${c.activos} activos${c.reserva?` · ${c.reserva} reserva`:''}`; }catch(_){}
     return `<div class="coord-hub-row">
-      <span class="coord-hub-name">${escH(hub)}</span>
+      <span class="coord-hub-name">${escH(hub)}${sub?`<span class="coord-hub-sub">${escH(sub)}</span>`:''}</span>
       <span class="coord-hub-badge ${loaded?'loaded':'empty'}" id="badge-${HUB_SLUG[hub]}">${loaded?`✓ ${escH(dateLabel)}`:'Sin pedido'}</span>
       <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
       ${noSurtidoBtn}${clearBtn}
@@ -1207,12 +1218,14 @@ async function doUpload(hub, text, items, badge, fields){
     await sbUpload(orderPath(hub), text);
     // §3.5: keep the FULL request (activos + reserva) verbatim for the round-2 cross-check
     const od=todayStr();
-    sbUpload(`pedido_completo/${HUB_SLUG[hub]}/${od}.json`,
-      JSON.stringify({orderDate:od, hub, uploadedAt:new Date().toISOString(), fields:fields||[], rows:items}),
-      'application/json').catch(e=>console.warn('pedido_completo upload failed:',e));
+    const pcBody=JSON.stringify({orderDate:od, hub, uploadedAt:new Date().toISOString(), fields:fields||[], rows:items});
+    sbUploadQueued(`pedido_completo/${HUB_SLUG[hub]}/${od}.json`, pcBody, {kind:'pedido_completo', contentType:'application/json'})
+      .catch(e=>console.warn('pedido_completo:',e));
     const reserva=items.filter(r=>!((parseFloat(r['Inventario hub saliente'])||0)>0)).length;
-    if(badge){ badge.className='coord-hub-badge loaded'; badge.textContent=`✓ ${todayStr()} (${items.length} prod.)`; }
-    toast(`✓ ${hub} — ${items.length} productos${reserva?` (${reserva} en reserva)`:''}`);
+    const activos=items.length-reserva;
+    try{ localStorage.setItem('calii_ordercount_'+HUB_SLUG[hub], JSON.stringify({date:od, activos, reserva})); }catch(_){}
+    if(badge){ badge.className='coord-hub-badge loaded'; badge.textContent=`✓ ${od} (${items.length} prod.)`; }
+    toast(`✓ ${hub} — ${activos} activos${reserva?` · ${reserva} en reserva`:''}`);
   }catch(e){
     if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Error'; }
     toast('❌ Error al subir: '+e.message);
@@ -1347,6 +1360,7 @@ function startAssembly(){
   });
   S.segments=[newSegment()];
   S._picks=[]; S._picksMaxTs=''; S._lights={}; S._contradicted={}; S._picksReachable=true; _revisarOpen=false;
+  _expandedIdx=-1;
   S.listScrollY=0; buildList(); showScreen('list');
   loadPicks().then(()=>{ renderList(); }); startPicksPoll();
 }
@@ -1635,6 +1649,7 @@ function confirmItem(){
   collapseDetail(); updateListRow(idx); updateListProgress();
   savePartialProgress();
   recordPick(idx); pollPicks(); // log this pick, then immediately refresh from others
+  advanceToNextPending(idx);
 }
 // reason: 'notfound' → status skipped ("Faltante") · 'shortdate' → status shortdate ("Faltante (fecha corta)")
 function markFaltante(reason){
@@ -1648,6 +1663,13 @@ function markFaltante(reason){
   collapseDetail(); updateListRow(idx); updateListProgress();
   savePartialProgress();
   recordPick(idx); pollPicks();
+  advanceToNextPending(idx);
+}
+// After resolving an item, jump to the next PENDING one further down the list (never backward).
+function advanceToNextPending(fromIdx){
+  for(let k=fromIdx+1;k<S.items.length;k++){
+    if(S.results[k] && S.results[k].status===ITEM_STATUS.PENDING){ setTimeout(()=>openDetail(k),160); return; }
+  }
 }
 function updateListRow(idx){
   const row=document.getElementById(`item-row-${idx}`);
@@ -1665,9 +1687,10 @@ function requestFinish(){
   if(pending>0) showModal(`${pending} producto${pending>1?'s':''} pendiente${pending>1?'s':''}`,`Hay ${pending} sin confirmar. ¿Ver el resumen de todas formas?`,'Ver resumen','m-danger',showSummary);
   else showSummary();
 }
+let _pendingReport=null; // captured assembly state, awaiting "Terminar armado"
+
 function showSummary(){
-  // Close the current timing segment, then capture state immediately —
-  // prevents stale/empty data if newOrder() fires before upload
+  // Close the current timing segment and capture state — the upload only fires on "Terminar armado"
   closeOpenSegment();
   stopPicksPoll();
   const hub=S.hub, assembler=S.assembler, items=S.items, results=S.results, orderDate=S.orderDate, segments=S.segments.slice();
@@ -1676,7 +1699,11 @@ function showSummary(){
   const ok=results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
   const partial=results.filter(r=>[ITEM_STATUS.PARTIAL,ITEM_STATUS.NOBC,ITEM_STATUS.WRONGSYS].includes(r.status)).length;
   const skipped=results.filter(r=>SKIP_STATUSES.includes(r.status)).length;
+  const pending=results.filter(r=>r.status===ITEM_STATUS.PENDING).length;
   const now=new Date();
+
+  document.getElementById('sum-check').textContent = pending>0 ? '📋' : '✅';
+  document.getElementById('sum-title').textContent = pending>0 ? `Resumen — ${pending} sin armar` : 'Pedido completado';
   document.getElementById('sum-hub-p').textContent=`${hub}${assembler?' · '+assembler:''} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`;
   document.getElementById('st-total').textContent=total;
   document.getElementById('st-ok').textContent=ok;
@@ -1692,25 +1719,42 @@ function showSummary(){
     const skipNote=r.status===ITEM_STATUS.SHORTDATE?' · 📅 Fecha corta':'';
     return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}${skipNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
   }).join('');
-  // NOTE: clearPartialSave is intentionally NOT called here yet.
-  // The partial (100% complete) is kept alive until the upload confirms.
-  // If upload fails the assembler can close the app and re-enter to retry.
-  showScreen('summary');
-  saveToHistory();
-  // Upload immediately with captured state — no async gap where S.* could be cleared
-  // Slug includes all unique assemblers who worked the order (e.g. "Jose_Diego")
+
   const aslug=getAssemblersSlug(results, assembler);
   const {path, suffix}=getReportPath(hub, aslug, ronda);
   const {csv}=generateCSV(items, results, hub, assembler, suffix, {ronda, r1Armado});
+  _pendingReport={ path, csv, items, results, segments, hub, orderDate, ronda };
 
+  document.getElementById('sum-upload-status').textContent='';
+  document.getElementById('sum-upload-status').className='sum-upload-status';
+  const finishBtn=document.getElementById('btn-terminar');
+  finishBtn.textContent='Terminar armado'; finishBtn.disabled=false; finishBtn.onclick=finalizeAssembly;
+  document.getElementById('btn-seguir').style.display='';
+  showScreen('summary');
+}
+
+// Go back to the list without uploading — reopen a timing segment and resume polling
+function backToListFromSummary(){
+  _pendingReport=null;
+  const seg=S.segments[S.segments.length-1];
+  if(seg && seg.end) S.segments.push(newSegment());
+  startPicksPoll();
+  showScreen('list'); renderList();
+}
+
+// "Terminar armado" — now the upload happens here
+function finalizeAssembly(){
+  if(!_pendingReport){ newOrder(); return; }
+  const {path, csv, items, results, segments, hub, orderDate, ronda}=_pendingReport;
+  saveToHistory(); // localStorage belt-and-braces, only on real finish
   const statusEl=document.getElementById('sum-upload-status');
   const finishBtn=document.getElementById('btn-terminar');
+  document.getElementById('btn-seguir').style.display='none';
 
   async function attemptUpload(){
     statusEl.className='sum-upload-status uploading';
     statusEl.textContent='☁️ Guardando reporte…';
-    finishBtn.disabled=true;
-    _retryUploadFn=null;
+    finishBtn.disabled=true; _retryUploadFn=null;
     let outcome;
     try{
       outcome=await sbUploadQueued(path, csv, {kind:'report', hub, orderDate, contentType:'text/csv'});
@@ -1725,18 +1769,19 @@ function showSummary(){
       return;
     }
     if(outcome==='uploaded'){
-      clearPartialSave(hub); // safe — the report is in Supabase
+      clearPartialSave(hub);
       uploadMetricsSidecar(path, items, results, segments, hub, orderDate, false, ronda);
       statusEl.className='sum-upload-status ok';
       statusEl.textContent='✅ Reporte guardado correctamente';
-    } else { // 'queued' — offline. Partial stays; flushOutbox() clears it when the report lands.
+    } else {
       uploadMetricsSidecar(path, items, results, segments, hub, orderDate, true, ronda);
       startOutboxTimer();
       statusEl.className='sum-upload-status queued';
       statusEl.textContent='📶 Sin conexión — el reporte se enviará solo al reconectar';
     }
-    finishBtn.textContent='Terminar armado';
-    finishBtn.onclick=()=>newOrder(outcome==='queued'); // queued → keep the partial
+    _pendingReport=null;
+    finishBtn.textContent='Listo →';
+    finishBtn.onclick=()=>newOrder(outcome==='queued');
     finishBtn.disabled=false;
   }
   attemptUpload();
@@ -2022,14 +2067,15 @@ function renderMetrics(){
   const rows=_metricFilteredSorted();
   _metricsRendered=rows;
 
-  const thead='<thead><tr>'+METRIC_COLS.map(c=>{
+  const thead='<thead><tr><th></th>'+METRIC_COLS.map(c=>{
     const ind=c.key===_metricsSort.key?`<span class="sort-ind">${_metricsSort.dir<0?'▾':'▴'}</span>`:'';
     return `<th onclick="metricsSort('${c.key}')">${c.label}${ind}</th>`;
-  }).join('')+'<th></th></tr></thead>';
+  }).join('')+'</tr></thead>';
 
   const tbody='<tbody>'+(rows.length?rows.map(m=>{
     const fl=(m.flags||[]).slice().sort((a,b)=>FLAG_ORDER.indexOf(a)-FLAG_ORDER.indexOf(b));
     const irr=fl.length>0;
+    const del=m._path?`<td><button class="metric-del" onclick="deleteMetric('${escH(m._path)}')" title="Eliminar esta métrica">🗑</button></td>`:'<td></td>';
     const cells=METRIC_COLS.map(c=>{
       if(c.kind==='flags'){
         const icons=fl.map(f=>FLAG_META[f]?FLAG_META[f].icon:'').join('');
@@ -2040,8 +2086,7 @@ function renderMetrics(){
       if(c.kind==='num'){ v=_round1(v); return `<td>${escH(String(v))}${c.suffix||''}</td>`; }
       return `<td>${escH(String(v))}</td>`;
     }).join('');
-    const del=m._path?`<td><button class="metric-del" onclick="deleteMetric('${escH(m._path)}')" title="Eliminar esta métrica">🗑</button></td>`:'<td></td>';
-    return `<tr class="${irr?'irregular':''}">${cells}${del}</tr>`;
+    return `<tr class="${irr?'irregular':''}">${del}${cells}</tr>`;
   }).join(''):`<tr><td class="metrics-empty" colspan="${METRIC_COLS.length+1}">Ningún armado coincide con los filtros.</td></tr>`)+'</tbody>';
 
   // Footer — weighted rate (total SKUs ÷ total hours), ignoring SIN_TIEMPO rows (div-by-zero)
@@ -2053,9 +2098,9 @@ function renderMetrics(){
   const wRate=totReloj>0?_round1(totSkus/(totReloj/60)):0;
   const note=excluded>0?`⛔ ${excluded} armado${excluded>1?'s':''} sin tiempo — excluido${excluded>1?'s':''} de los totales`:'';
   const tfoot=rows.length?`<tfoot>
-    <tr><td colspan="4">Totales · ${agg.length} armado${agg.length!==1?'s':''}</td>
+    <tr><td colspan="5">Totales · ${agg.length} armado${agg.length!==1?'s':''}</td>
       <td>${totSkus}</td><td>${_round1(totReloj)}</td><td>${_round1(totActivo)}</td><td>${wRate}</td>
-      <td colspan="5"></td></tr>
+      <td colspan="4"></td></tr>
     ${note?`<tr><td colspan="${METRIC_COLS.length+1}" class="metrics-foot-note">${note}</td></tr>`:''}
   </tfoot>`:'';
 
@@ -2735,6 +2780,7 @@ function requestSaveAndExit(){
   collapseDetail();
   const done=S.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
   const total=S.items.length;
+  if(done===0){ newOrder(); return; } // nothing to save
   showModal(
     '💾 Guardar y salir',
     `Se guardará el progreso actual (${done}/${total} productos completados).\n\nPodrás retomar este pedido más tarde desde el mismo hub.`,
@@ -2743,6 +2789,13 @@ function requestSaveAndExit(){
     saveAndExit
   );
 }
+// List-header "←": nothing done yet → clean exit; work in progress → save it (auto-saved anyway)
+function cancelOrBack(){
+  collapseDetail();
+  const done=S.results.filter(r=>r&&r.status!==ITEM_STATUS.PENDING).length;
+  if(done===0){ newOrder(); return; }
+  requestSaveAndExit();
+}
 function saveAndExit(){
   closeOpenSegment(); // close the timing segment so the gap until resume isn't counted
   savePartialProgress();
@@ -2750,7 +2803,7 @@ function saveAndExit(){
   const total=S.items.length;
   _pendingPartial=null;
   _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
-  S.ronda=1; S.baseDate=''; S._r1Armado=null;
+  S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
   stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
@@ -2768,7 +2821,7 @@ function exitKeepingPartial(){
   closeOpenSegment(); savePartialProgress(); // flush the closed segment into the kept partial
   _pendingPartial=null;
   _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
-  S.ronda=1; S.baseDate=''; S._r1Armado=null;
+  S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
   stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
@@ -2786,7 +2839,7 @@ function newOrder(keepPartial){
   if(_hub && keepPartial!==true) clearPartialSave(_hub, _orderDate);
   _pendingPartial=null;
   _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
-  S.ronda=1; S.baseDate=''; S._r1Armado=null;
+  S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
   stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
@@ -2838,6 +2891,7 @@ function partialSbPath(hub, orderDate){ return `partials/${HUB_SLUG[hub]}/${orde
 
 function savePartialProgress(){
   if(!S.hub||!S.items.length||!S.orderDate) return;
+  if(!S.results.some(r=>r&&r.status!==ITEM_STATUS.PENDING)) return; // nothing resolved yet — no partial worth keeping
   const seq=++_partialSaveSeq;
   const payload={
     hub:S.hub, items:S.items,
@@ -2896,15 +2950,22 @@ async function checkForPartialSave(){
   if(!partial||S.hub!==hub||S.orderDate!==orderDate) return;
   _pendingPartial=partial;
   updateStartBtn(); // disables Iniciar Armado while partial is pending
+  // Only one assembler configured → pre-select so "Continuar pedido" works in one tap
+  if(S.assemblers.length===1 && !S.assembler){
+    const sel=document.getElementById('assembler-select');
+    if(sel){ sel.value=S.assemblers[0]; }
+    pickAssembler(S.assemblers[0]);
+  }
   const done=partial.results.filter(r=>r.status!=='pending').length, total=partial.results.length;
   const pct=total?Math.round(done/total*100):0;
   const savedTime=partial.savedAt?new Date(partial.savedAt).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):'';
   // Show which assemblers have worked on this order so far
   const workers=[...new Set(partial.results.filter(r=>r.assembler).map(r=>r.assembler))];
   const workerStr=workers.length?' · '+workers.join(', '):'';
+  const needName=S.assemblers.length>1 && !S.assembler;
   notice.innerHTML=`<div class="partial-notice">
     <div class="partial-notice-title">📂 Pedido en progreso${workerStr}</div>
-    <div class="partial-notice-sub">${done} de ${total} productos (${pct}%)${savedTime?' · Guardado a las '+savedTime:''}</div>
+    <div class="partial-notice-sub">${done} de ${total} productos (${pct}%)${savedTime?' · Guardado a las '+savedTime:''}${needName?'<br><b>Selecciona tu nombre abajo para continuar</b>':''}</div>
     <div class="partial-notice-btns">
       <button class="partial-resume-btn" onclick="resumePartialSave()">↩ Continuar pedido</button>
       <button class="partial-discard-btn" onclick="discardPartialSave()">Nuevo armado</button>
