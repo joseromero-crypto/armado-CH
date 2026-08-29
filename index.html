@@ -116,6 +116,8 @@
     .metrics-table tfoot td{font-weight:800;color:var(--gray-900);background:var(--gray-100);border-top:2px solid var(--gray-300);border-bottom:none}
     .metrics-foot-note{font-size:11px;color:var(--gray-500);font-weight:600;padding:6px 2px}
     .metrics-empty{padding:28px 16px;text-align:center;color:var(--gray-500);font-size:14px}
+    .metric-del{background:none;border:none;cursor:pointer;font-size:13px;opacity:.5;padding:2px 4px}
+    .metric-del:hover{opacity:1}
 
     /* LIST */
     .list-header{background:white;box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:20}
@@ -1262,14 +1264,25 @@ async function sbDelete(path){
   });
   if(!r.ok){ const e=await r.text(); throw new Error(`${r.status}: ${e}`); }
 }
+// The metrics sidecar path mirrors the report path (reports/…csv -> metrics/…json)
+function metricsPathForReport(reportPath){ return reportPath.replace(/^reports\//,'metrics/').replace(/\.csv$/,'.json'); }
+
 function deleteReport(path, hub, label){
   showModal(
     '¿Eliminar reporte?',
-    `Se eliminará permanentemente el reporte "${label}" de ${hub}.\n\nEsta acción no se puede deshacer.`,
+    `Se eliminará permanentemente el reporte "${label}" de ${hub} y sus métricas.\n\nEsta acción no se puede deshacer.`,
     'Eliminar',
     'm-danger',
     async ()=>{
-      try{ await sbDelete(path); toast('✓ Reporte eliminado'); loadCoordinatorScreen(); }
+      try{
+        await sbDelete(path);
+        sbDelete(metricsPathForReport(path)).catch(()=>{}); // sidecar — ignore if missing
+        try{ // drop from the metrics cache so it doesn't reappear
+          const c=JSON.parse(localStorage.getItem(METRICS_CACHE_KEY)||'{}'); delete c[metricsPathForReport(path)];
+          localStorage.setItem(METRICS_CACHE_KEY, JSON.stringify(c));
+        }catch(_){}
+        toast('✓ Reporte y métricas eliminados'); loadCoordinatorScreen();
+      }
       catch(e){ toast('❌ Error al eliminar: '+e.message); }
     }
   );
@@ -1949,7 +1962,7 @@ async function loadMetrics(force){
   for(const p of paths){ if(cache[p]) fresh[p]=cache[p]; }
   try{ localStorage.setItem(METRICS_CACHE_KEY, JSON.stringify(fresh)); }catch(_){}
 
-  _metricsData=paths.map(p=>cache[p]).filter(m=>m&&m.v).map(m=>({...m}));
+  _metricsData=paths.filter(p=>cache[p]&&cache[p].v).map(p=>({...cache[p], _path:p}));
 
   // Fill filter dropdowns, preserving any current selection that still exists
   const armSel=document.getElementById('mf-armador'), hubSel=document.getElementById('mf-hub');
@@ -2012,7 +2025,7 @@ function renderMetrics(){
   const thead='<thead><tr>'+METRIC_COLS.map(c=>{
     const ind=c.key===_metricsSort.key?`<span class="sort-ind">${_metricsSort.dir<0?'▾':'▴'}</span>`:'';
     return `<th onclick="metricsSort('${c.key}')">${c.label}${ind}</th>`;
-  }).join('')+'</tr></thead>';
+  }).join('')+'<th></th></tr></thead>';
 
   const tbody='<tbody>'+(rows.length?rows.map(m=>{
     const fl=(m.flags||[]).slice().sort((a,b)=>FLAG_ORDER.indexOf(a)-FLAG_ORDER.indexOf(b));
@@ -2027,8 +2040,9 @@ function renderMetrics(){
       if(c.kind==='num'){ v=_round1(v); return `<td>${escH(String(v))}${c.suffix||''}</td>`; }
       return `<td>${escH(String(v))}</td>`;
     }).join('');
-    return `<tr class="${irr?'irregular':''}">${cells}</tr>`;
-  }).join(''):`<tr><td class="metrics-empty" colspan="${METRIC_COLS.length}">Ningún armado coincide con los filtros.</td></tr>`)+'</tbody>';
+    const del=m._path?`<td><button class="metric-del" onclick="deleteMetric('${escH(m._path)}')" title="Eliminar esta métrica">🗑</button></td>`:'<td></td>';
+    return `<tr class="${irr?'irregular':''}">${cells}${del}</tr>`;
+  }).join(''):`<tr><td class="metrics-empty" colspan="${METRIC_COLS.length+1}">Ningún armado coincide con los filtros.</td></tr>`)+'</tbody>';
 
   // Footer — weighted rate (total SKUs ÷ total hours), ignoring SIN_TIEMPO rows (div-by-zero)
   const agg=rows.filter(m=>!(m.flags||[]).includes('SIN_TIEMPO'));
@@ -2041,11 +2055,28 @@ function renderMetrics(){
   const tfoot=rows.length?`<tfoot>
     <tr><td colspan="4">Totales · ${agg.length} armado${agg.length!==1?'s':''}</td>
       <td>${totSkus}</td><td>${_round1(totReloj)}</td><td>${_round1(totActivo)}</td><td>${wRate}</td>
-      <td colspan="4"></td></tr>
-    ${note?`<tr><td colspan="${METRIC_COLS.length}" class="metrics-foot-note">${note}</td></tr>`:''}
+      <td colspan="5"></td></tr>
+    ${note?`<tr><td colspan="${METRIC_COLS.length+1}" class="metrics-foot-note">${note}</td></tr>`:''}
   </tfoot>`:'';
 
   tbl.innerHTML=thead+tbody+tfoot;
+}
+
+function deleteMetric(path){
+  showModal(
+    '¿Eliminar métrica?',
+    `Se eliminará permanentemente este registro de métricas.\n\nEl reporte CSV (si existe) no se toca.`,
+    'Eliminar', 'm-danger',
+    async ()=>{
+      try{
+        await sbDelete(path);
+        _metricsData=_metricsData.filter(m=>m._path!==path);
+        try{ const c=JSON.parse(localStorage.getItem(METRICS_CACHE_KEY)||'{}'); delete c[path]; localStorage.setItem(METRICS_CACHE_KEY,JSON.stringify(c)); }catch(_){}
+        renderMetrics();
+        toast('✓ Métrica eliminada');
+      }catch(e){ toast('❌ Error al eliminar: '+e.message); }
+    }
+  );
 }
 
 function downloadMetricsCSV(){
