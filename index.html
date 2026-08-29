@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- Single-file app that updates in place — always revalidate the HTML so a stale copy can't linger -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Calii · Armado</title>
   <style>
     :root {
@@ -86,6 +90,33 @@
     .coord-empty{font-size:13px;color:var(--gray-500);padding:8px 0}
     .archive-toggle{background:none;border:none;color:var(--green);font-size:13px;font-weight:700;cursor:pointer;padding:10px 0;text-decoration:underline;display:block;margin:0 auto}
 
+    /* METRICS (coordinator) */
+    .metrics-body{padding:14px 12px 60px;max-width:900px;margin:0 auto;width:100%}
+    .metrics-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+    .mf-sel{padding:8px 10px;border:1.5px solid var(--gray-300);border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--gray-700);background:white;-webkit-appearance:none;max-width:180px}
+    .mf-sel:focus{outline:none;border-color:var(--green)}
+    .mf-toggle{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--gray-700);cursor:pointer}
+    .mf-toggle input{width:16px;height:16px;accent-color:var(--green)}
+    .mf-dl{margin-left:auto;background:var(--green);color:white;border:none;border-radius:var(--radius-sm);padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+    .mf-dl:active{opacity:.85}
+    .metrics-status{font-size:13px;color:var(--gray-500);padding:6px 2px}
+    .metrics-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:white}
+    .metrics-table{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+    .metrics-table th,.metrics-table td{padding:8px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--gray-200)}
+    .metrics-table th:first-child,.metrics-table td:first-child,
+    .metrics-table th:nth-child(2),.metrics-table td:nth-child(2),
+    .metrics-table th:nth-child(3),.metrics-table td:nth-child(3),
+    .metrics-table th:nth-child(4),.metrics-table td:nth-child(4){text-align:left}
+    .metrics-table thead th{position:sticky;top:0;background:var(--gray-100);font-weight:700;color:var(--gray-700);cursor:pointer;user-select:none;z-index:1}
+    .metrics-table thead th:hover{background:var(--gray-200)}
+    .metrics-table thead th .sort-ind{color:var(--green);font-weight:800;margin-left:2px}
+    .metrics-table tbody tr.irregular{box-shadow:inset 3px 0 0 var(--orange)}
+    .metrics-table tbody tr:hover{background:var(--gray-50)}
+    .metrics-table .flag-cell{font-size:13px;letter-spacing:1px}
+    .metrics-table tfoot td{font-weight:800;color:var(--gray-900);background:var(--gray-100);border-top:2px solid var(--gray-300);border-bottom:none}
+    .metrics-foot-note{font-size:11px;color:var(--gray-500);font-weight:600;padding:6px 2px}
+    .metrics-empty{padding:28px 16px;text-align:center;color:var(--gray-500);font-size:14px}
+
     /* LIST */
     .list-header{background:white;box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:20}
     .list-header-row{display:flex;align-items:center;gap:10px;padding:12px 14px 8px}
@@ -101,6 +132,7 @@
     .item-row.status-completed{border-color:#00c3b3}
     .item-row.status-partial{border-color:var(--orange)}
     .item-row.status-skipped{border-color:var(--red)}
+    .item-row.status-shortdate{border-color:var(--orange)}
     .item-row.status-nobc,.item-row.status-wrongsys{border-color:#FFA000}
     .row-thumb{width:64px;height:64px;flex-shrink:0;overflow:hidden;background:var(--gray-50);display:flex;align-items:center;justify-content:center}
     .row-thumb img{width:100%;height:100%;object-fit:contain}
@@ -114,17 +146,8 @@
     .row-status{font-size:20px}
     .row-chevron{font-size:16px;color:var(--gray-400)}
 
-    /* DETAIL */
-    .detail-header{background:white;box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:20;padding:12px 14px;display:flex;align-items:center;gap:10px}
-    .back-btn{background:none;border:none;font-size:22px;color:var(--gray-600);cursor:pointer;padding:2px 6px;flex-shrink:0}
-    .detail-title{flex:1;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--gray-900)}
-    .detail-counter{font-size:13px;color:var(--gray-500);font-weight:600;white-space:nowrap}
-    .detail-body{flex:1;overflow-y:auto;padding-bottom:88px}
-    .d-image-wrap{width:100%;height:220px;background:var(--gray-50);display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--gray-200)}
-    .d-image-wrap img{max-width:100%;max-height:220px;object-fit:contain}
-    .d-img-ph{font-size:80px;color:var(--gray-300)}
+    /* ITEM PANEL (shared by inline accordion) */
     .d-info{padding:16px}
-    .d-name{font-size:20px;font-weight:800;line-height:1.25;margin-bottom:12px}
     .d-tags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
     .d-tag{display:flex;align-items:baseline;gap:4px;background:var(--gray-100);border-radius:6px;padding:5px 10px}
     .d-tag-k{font-size:11px;color:var(--gray-500);font-weight:600}
@@ -162,7 +185,6 @@
     .qty-stepper{width:42px;height:44px;border:1.5px solid var(--gray-300);border-radius:8px;background:white;font-size:22px;color:var(--gray-700);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .1s}
     .qty-stepper:active{background:var(--gray-100)}
     .qty-unit-lbl{font-size:15px;color:var(--gray-500)}
-    .detail-actions{position:fixed;bottom:0;left:0;right:0;background:white;box-shadow:0 -2px 16px rgba(0,0,0,.12);padding:12px 16px 20px;display:flex;gap:10px;z-index:30}
     .btn-skip{flex:1;padding:15px;border-radius:var(--radius);border:2px solid var(--red);background:white;color:var(--red);font-size:14px;font-weight:700;cursor:pointer;transition:all .15s}
     .btn-skip:hover{background:var(--red-light)}
     .btn-confirm{flex:2;padding:15px;border-radius:var(--radius);border:none;background:var(--green);color:white;font-size:16px;font-weight:800;cursor:pointer;transition:background .15s}
@@ -191,7 +213,10 @@
     .sum-upload-status{font-size:13px;text-align:center;padding:6px 12px;border-radius:8px;margin-bottom:2px;min-height:28px}
     .sum-upload-status.uploading{background:var(--green-light);color:var(--green-dark)}
     .sum-upload-status.ok{background:#e6f9f7;color:#007a6e}
+    .sum-upload-status.queued{background:#FFF8E1;color:#8a5a00}
     .sum-upload-status.fail{background:#fff3f3;color:#c0392b}
+    .outbox-pill{margin-top:4px;padding:12px;border:none;border-radius:var(--radius);background:#FFF8E1;color:#8a5a00;font-size:13px;font-weight:700;cursor:pointer;text-align:center;box-shadow:var(--shadow-sm)}
+    .outbox-pill.ok{background:var(--green-light);color:var(--green-dark)}
     .btn-retry{margin-left:8px;padding:2px 10px;border-radius:6px;border:1px solid #c0392b;background:white;color:#c0392b;font-size:12px;cursor:pointer}
 
     /* MODAL */
@@ -221,9 +246,7 @@
     .toast.show{opacity:1}
 
     @media(min-width:600px){
-      .d-image-wrap{height:280px}.d-image-wrap img{max-height:280px}.d-name{font-size:22px}
       .hub-grid{grid-template-columns:repeat(3,1fr)}
-      .detail-actions{max-width:640px;margin:0 auto;left:50%;right:auto;transform:translateX(-50%);width:100%}
     }
 
     /* INLINE EXPAND PANEL */
@@ -232,11 +255,69 @@
     .item-row.expanded .row-chevron{transform:rotate(90deg)}
     .row-chevron{transition:transform .2s}
     .inline-actions{display:flex;gap:10px;padding:12px 16px 16px;border-top:1px solid var(--gray-200);background:white}
-    .exp-input{width:100%;padding:13px 14px;border:2px solid var(--gray-300);border-radius:var(--radius-sm);font-size:17px;font-family:monospace;-webkit-appearance:none;transition:border-color .15s,background .15s;letter-spacing:1px}
-    .exp-input:focus{outline:none;border-color:var(--green)}
-    .exp-input.exp-ok{border-color:#00c3b3;background:#E0F7F5}
-    .exp-input.exp-err{border-color:var(--red);background:var(--red-light)}
-    .min-exp-info{font-size:12px;color:#7a4f00;margin-bottom:8px;padding:6px 10px;background:#FFF8E1;border-radius:6px;border-left:3px solid #FFA000}
+    /* MIN EXPIRY — read-only banner (above qty input) + list-row chip */
+    .min-exp-banner{display:flex;gap:10px;align-items:flex-start;background:var(--orange-light);border:1.5px solid var(--orange);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px}
+    .min-exp-banner-icon{font-size:20px;line-height:1.1;flex-shrink:0}
+    .min-exp-banner-main{font-size:14px;font-weight:800;color:#7a3d00}
+    .min-exp-banner-sub{font-size:12px;color:#7a3d00;margin-top:1px}
+    .row-exp-chip{font-size:11px;font-weight:700;color:var(--orange);background:var(--orange-light);border-radius:4px;padding:2px 6px;white-space:nowrap}
+
+    /* INVENTORY SEMÁFORO (§3.4) */
+    .light-chip{font-size:13px;line-height:1;flex-shrink:0}
+    .revisar-chip{font-size:13px;line-height:1;flex-shrink:0}
+    .sem-block{border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;border:1.5px solid}
+    .sem-block.sem-rojo{background:var(--red-light);border-color:var(--red)}
+    .sem-block.sem-amarillo{background:#FFF8E1;border-color:#FFA000}
+    .sem-main{font-size:14px;font-weight:800}
+    .sem-rojo .sem-main{color:var(--red)}
+    .sem-amarillo .sem-main{color:#8a5a00}
+    .sem-sub{font-size:12px;margin-top:2px}
+    .sem-rojo .sem-sub{color:#7a1c1c}
+    .sem-amarillo .sem-sub{color:#7a5a00}
+    .revisar-hdr-chip{padding:6px 10px;border-radius:20px;border:1.5px solid #FFA000;background:#FFF8E1;color:#8a5a00;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;margin-right:4px}
+    .revisar-section{margin-top:14px;border-top:2px dashed var(--gray-300);padding-top:10px}
+    .revisar-head{width:100%;text-align:left;background:#FFF8E1;border:1px solid #FFCC80;border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-weight:700;color:#8a5a00;cursor:pointer;margin-bottom:8px}
+    .invsub-title{font-size:13px;font-weight:800;color:var(--gray-700);margin-bottom:8px}
+    .invrow{display:flex;flex-direction:column;gap:2px;padding:8px 10px;background:white;border-radius:var(--radius-sm);box-shadow:var(--shadow-sm);margin-bottom:6px;font-size:13px}
+    .invrow span{font-size:12px;color:var(--gray-600)}
+
+    /* CIERRE — round-2 cross-check (§3.5) */
+    .cierre-box{background:white;border-radius:var(--radius-sm);padding:14px 16px;box-shadow:var(--shadow-sm)}
+    .cierre-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .cierre-status{font-size:12px;color:var(--gray-600);font-weight:600}
+    .cierre-headline{background:var(--green-light);color:var(--green-dark);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;margin-bottom:10px}
+    .cierre-hubrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 10px;background:var(--gray-50);border-radius:var(--radius-sm);margin-bottom:4px;font-size:13px;font-weight:600;cursor:pointer}
+    .cierre-count{color:var(--green-dark);font-weight:700;white-space:nowrap}
+    .cierre-detrow{display:flex;flex-direction:column;gap:2px;padding:7px 10px 7px 18px;font-size:12px;border-left:2px solid var(--green-light)}
+    .cierre-detrow span{color:var(--gray-500);font-size:11px}
+    .cierre-foot{font-size:11px;color:var(--gray-500);font-weight:600;margin-top:10px;padding-top:8px;border-top:1px solid var(--gray-200)}
+    .cierre-gen{background:var(--green);color:white;border:none;border-radius:6px;padding:4px 9px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px}
+    .cierre-gen:disabled{background:var(--gray-300);color:var(--gray-500);cursor:not-allowed}
+    .coord-report-row.r2-child{margin-left:16px;border-left:3px solid var(--green-light)}
+
+    /* REGISTRO — copiloto (§3.7) */
+    .reg-body{padding:14px 12px 60px;max-width:600px;margin:0 auto;width:100%}
+    .reg-counter{font-size:14px;font-weight:800;color:var(--gray-700);text-align:center;margin-bottom:6px;font-variant-numeric:tabular-nums}
+    .reg-bar{height:5px;background:var(--gray-200);border-radius:99px;overflow:hidden;margin-bottom:14px}
+    .reg-bar-fill{height:100%;background:var(--green);width:0;transition:width .3s}
+    .reg-sect{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-600);margin:16px 0 6px}
+    .reg-row{display:flex;align-items:center;gap:10px;padding:11px 12px;background:white;border-radius:var(--radius-sm);box-shadow:var(--shadow-sm);margin-bottom:5px;cursor:pointer}
+    .reg-row.exc{border-left:3px solid var(--orange)}
+    .reg-row.done{opacity:.5}
+    .reg-row.done .reg-prod{text-decoration:line-through}
+    .reg-row input{width:20px;height:20px;accent-color:var(--green);flex-shrink:0}
+    .reg-prod{flex:1;font-size:13px;font-weight:600;min-width:0}
+    .reg-qty{font-size:12px;color:var(--gray-500);white-space:nowrap;font-variant-numeric:tabular-nums}
+    .reg-qty b{color:var(--gray-900)}
+    .reg-tag{font-size:10px;font-weight:700;color:var(--orange);background:var(--orange-light);border-radius:4px;padding:2px 5px;white-space:nowrap}
+
+    /* FALTANTE reason sub-branch */
+    .faltante-branch{flex:1}
+    .faltante-branch-q{font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:8px;text-align:center}
+    .faltante-branch-btns{display:flex;gap:8px}
+    .fb-btn{flex:1;padding:12px 8px;border-radius:var(--radius-sm);border:1.5px solid var(--gray-300);background:white;color:var(--gray-900);font-size:13px;font-weight:700;cursor:pointer;transition:border-color .15s}
+    .fb-btn:hover{border-color:var(--gray-500)}
+    .fb-btn.fb-back{flex:0 0 46px;color:var(--gray-500);font-size:18px}
 
     /* ASSEMBLER LIST (coordinator) */
     .assembler-mgr-box{background:white;border-radius:var(--radius-sm);padding:14px 16px;box-shadow:var(--shadow-sm);margin-bottom:8px}
@@ -280,6 +361,7 @@
       <span class="home-btn-icon">📦</span>
       <div><div class="home-btn-label">Armar Pedido</div><div class="home-btn-sub">Selecciona tu hub y empieza</div></div>
     </button>
+    <button id="home-outbox-pill" class="outbox-pill" style="display:none" onclick="flushOutbox(true)"></button>
   </div>
 </div>
 
@@ -288,11 +370,27 @@
   <div class="coord-header">
     <button class="back-text-btn" onclick="showScreen('home')">←</button>
     <h2>Coordinador</h2>
+    <button class="back-text-btn" onclick="openMetrics()" title="Métricas de armado">📊</button>
     <button class="back-text-btn" onclick="loadCoordinatorScreen()" title="Actualizar">↺</button>
   </div>
   <div class="coord-body">
     <div class="coord-section-title" style="margin-top:0">Cargar pedidos</div>
     <div id="coord-hub-list"></div>
+
+    <div class="coord-section-title" style="margin-top:28px">Inventario — hoy</div>
+    <button class="archive-toggle" id="invtoday-toggle" onclick="toggleInvToday()" style="text-align:left;margin:0">⚠️ Ver conflictos y faltantes de hoy</button>
+    <div id="invtoday-body" style="display:none;margin-top:10px"></div>
+
+    <div class="coord-section-title" style="margin-top:28px">🔄 Inventario de cierre</div>
+    <div class="cierre-box">
+      <div class="cierre-row">
+        <label class="coord-upload-btn">Subir registro de inventario<input type="file" accept=".csv" onchange="uploadCierre(this)"></label>
+        <span id="cierre-status" class="cierre-status">Sin cargar</span>
+      </div>
+      <button class="btn btn-outline" style="margin-top:10px;padding:12px" onclick="revisarCierre()">Revisar inventario nuevo vs pendientes</button>
+      <div id="cierre-result" style="margin-top:12px"></div>
+    </div>
+
     <div class="coord-section-title" style="margin-top:28px">Armadores</div>
     <div class="assembler-mgr-box">
       <div id="assembler-list-items"><div class="coord-empty">Cargando…</div></div>
@@ -310,6 +408,47 @@
       <div class="coord-section-title" style="margin-top:16px">Historial de reportes anteriores</div>
       <div id="coord-archive-list"><div class="coord-empty">Cargando historial…</div></div>
     </div>
+  </div>
+</div>
+
+<!-- METRICS (coordinator) -->
+<div id="screen-metrics" class="screen">
+  <div class="coord-header">
+    <button class="back-text-btn" onclick="showScreen('coordinator')">←</button>
+    <h2>Métricas de armado</h2>
+    <button class="back-text-btn" onclick="loadMetrics(true)" title="Actualizar todo">↺</button>
+  </div>
+  <div class="metrics-body">
+    <div class="metrics-filters">
+      <select id="mf-armador" class="mf-sel" onchange="renderMetrics()"><option value="">Todos los armadores</option></select>
+      <select id="mf-hub" class="mf-sel" onchange="renderMetrics()"><option value="">Todos los hubs</option></select>
+      <select id="mf-periodo" class="mf-sel" onchange="renderMetrics()">
+        <option value="7">7 días</option>
+        <option value="30" selected>30 días</option>
+        <option value="90">90 días</option>
+        <option value="0">Todo</option>
+      </select>
+      <label class="mf-toggle"><input type="checkbox" id="mf-irregulares" onchange="renderMetrics()"> Solo irregulares</label>
+      <button class="mf-dl" onclick="downloadMetricsCSV()">⬇ CSV</button>
+    </div>
+    <div id="metrics-status" class="metrics-status"></div>
+    <div class="metrics-table-wrap">
+      <table class="metrics-table" id="metrics-table"></table>
+    </div>
+  </div>
+</div>
+
+<!-- REGISTRO — copiloto de registro (§3.7) -->
+<div id="screen-registro" class="screen">
+  <div class="coord-header">
+    <button class="back-text-btn" onclick="showScreen('coordinator')">←</button>
+    <h2 id="reg-title">Registro</h2>
+    <button class="back-text-btn" onclick="downloadRegistroCSV()" title="Descargar CSV">⬇</button>
+  </div>
+  <div class="reg-body">
+    <div class="reg-counter"><span id="reg-done">0</span> / <span id="reg-total">0</span> capturado</div>
+    <div class="reg-bar"><div class="reg-bar-fill" id="reg-bar-fill"></div></div>
+    <div id="reg-list"></div>
   </div>
 </div>
 
@@ -356,28 +495,15 @@
   <div class="list-header">
     <div class="list-header-row">
       <span class="list-hub" id="list-hub">—</span>
+      <button class="revisar-hdr-chip" id="revisar-hdr-chip" onclick="scrollToRevisar()" style="display:none" title="Faltantes que otro armador sí encontró">🔁 0</button>
       <button class="finish-hdr-btn" onclick="showLegend()" style="border-color:var(--gray-300);color:var(--gray-600);margin-right:4px" title="Leyenda">❓</button>
       <button class="finish-hdr-btn" onclick="requestSaveAndExit()" style="border-color:var(--gray-300);color:var(--gray-600);margin-right:4px" title="Guardar y salir">💾</button>
       <button class="finish-hdr-btn" onclick="requestFinish()">Finalizar pedido</button>
-      <span class="list-prog-label" id="list-prog-label">0/0</span>
+      <span class="list-prog-label" id="list-prog-label" onclick="pollPicks()" style="cursor:pointer" title="Actualizar inventario">0/0</span>
     </div>
     <div class="prog-bar"><div class="prog-fill" id="list-prog-fill" style="width:0%"></div></div>
   </div>
   <div class="list-body" id="list-body"></div>
-</div>
-
-<!-- DETAIL -->
-<div id="screen-detail" class="screen">
-  <div class="detail-header">
-    <button class="back-btn" onclick="goBackToList()">←</button>
-    <span class="detail-title" id="detail-title">—</span>
-    <span class="detail-counter" id="detail-counter">—</span>
-  </div>
-  <div class="detail-body" id="detail-body"></div>
-  <div class="detail-actions">
-    <button class="btn-skip" onclick="markFaltante()">⚑ Faltante</button>
-    <button class="btn-confirm" onclick="confirmItem()">Confirmar ✓</button>
-  </div>
 </div>
 
 <!-- SUMMARY -->
@@ -448,14 +574,18 @@ const HUB_SLUG = {
 };
 const HUBS = Object.keys(HUB_SLUG);
 
+// Every hub is assembled from CH Guadalupe, so all seven contend for the same shelf (§3.4).
+// One line, one CH — if a second CH ever opens, only this map changes.
+const HUB_CH = {}; HUBS.forEach(h => HUB_CH[h] = 'CH-GDLP');
+
 function localDateStr(d){ const t=d||new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; }
 function todayStr(){ return localDateStr(); }
 function orderPath(hub){ return `orders/${HUB_SLUG[hub]}/${todayStr()}.csv`; }
 
-async function sbUpload(path, content){
+async function sbUpload(path, content, contentType='text/csv'){
   const r = await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`,{
     method:'POST',
-    headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'text/csv','x-upsert':'true'},
+    headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':contentType,'x-upsert':'true'},
     body: content
   });
   if(!r.ok){ const e=await r.text(); throw new Error(`${r.status}: ${e}`); }
@@ -475,11 +605,120 @@ async function sbList(prefix){
   return r.json();
 }
 
+/* ── POSTGREST (picks table — §3.4) ── */
+async function pgInsert(table, row){
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`,{
+    method:'POST',
+    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body: JSON.stringify(row)
+  });
+  if(!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+}
+async function pgSelect(table, query){
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${query}`,{
+    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
+  });
+  if(!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+/* ── OFFLINE OUTBOX (§3.6) — reports / metrics / picks queue; nothing is lost in a dead zone ── */
+const OUTBOX_KEY='calii_outbox';
+// A thrown Error whose message starts "NNN:" is a real server response; anything else is a network failure.
+function isNetErr(e){ return !/^\d{3}[:\s]/.test(String(e && e.message || '')); }
+function outboxRead(){ try{ return JSON.parse(localStorage.getItem(OUTBOX_KEY)||'[]')||[]; }catch(_){ return []; } }
+function outboxWrite(a){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(a)); }catch(_){} updateOutboxPill(); }
+function outboxAdd(entry){
+  const a=outboxRead();
+  a.push({ id:Date.now()+'_'+Math.random().toString(36).slice(2,7), tries:0, createdAt:new Date().toISOString(), ...entry });
+  outboxWrite(a);
+}
+// Try the upload now; on a network failure enqueue and resolve 'queued'; a real 4xx rejects.
+async function sbUploadQueued(path, body, meta={}){
+  try{ await sbUpload(path, body, meta.contentType||'text/csv'); return 'uploaded'; }
+  catch(e){
+    if(!isNetErr(e)) throw e;
+    outboxAdd({ kind:meta.kind||'report', path, body, contentType:meta.contentType||'text/csv',
+      hub:meta.hub||'', orderDate:meta.orderDate||'', lastError:String(e.message||e) });
+    return 'queued';
+  }
+}
+let _flushing=false;
+async function flushOutbox(manual){
+  if(_flushing) return;
+  let a=outboxRead();
+  if(!a.length){ if(manual) toast('Nada pendiente de enviar'); return; }
+  _flushing=true;
+  const keep=[]; let sent=0;
+  for(const e of a){
+    try{
+      if(e.kind==='pick') await pgInsert('picks', JSON.parse(e.body));
+      else await sbUpload(e.path, e.body, e.contentType||'text/csv');
+      sent++;
+      if(e.kind==='report' && e.hub && e.orderDate) clearPartialSave(e.hub, e.orderDate); // now safe
+    }catch(err){
+      e.tries=(e.tries||0)+1; e.lastError=String(err.message||err);
+      const hard=/^(400|401|403|404|409|413|422)[:\s]/.test(String(err.message||''));
+      if(hard && e.kind!=='report' && e.tries>=2){ /* drop a permanently-bad non-report */ }
+      else keep.push(e);
+    }
+  }
+  _flushing=false;
+  outboxWrite(keep);
+  if(sent>0){
+    const pill=document.getElementById('home-outbox-pill');
+    if(pill && !keep.length){ pill.classList.add('ok'); pill.textContent='✓ Enviado'; pill.style.display='block';
+      setTimeout(()=>{ pill.classList.remove('ok'); updateOutboxPill(); }, 1800); }
+    if(manual || !keep.length) toast(`✓ ${sent} archivo${sent!==1?'s':''} enviado${sent!==1?'s':''}`);
+  } else if(manual){ toast('Sin conexión — se reintentará solo'); }
+}
+function updateOutboxPill(){
+  const el=document.getElementById('home-outbox-pill'); if(!el) return;
+  const n=outboxRead().length;
+  if(n>0 && !el.classList.contains('ok')){ el.style.display='block'; el.textContent=`⏳ ${n} pendiente${n>1?'s':''} de enviar`; }
+  else if(!el.classList.contains('ok')) el.style.display='none';
+}
+let _outboxInterval=null;
+function startOutboxTimer(){
+  if(_outboxInterval) return;
+  _outboxInterval=setInterval(()=>{ if(outboxRead().length) flushOutbox(); else { clearInterval(_outboxInterval); _outboxInterval=null; } }, 30000);
+}
+window.addEventListener('online', ()=>flushOutbox());
+
 /* ── STATE ── */
-const S = { hub:'', assembler:'', assemblers:[], items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false, _orderLoaded:false, orderDate:'' };
+const S = { hub:'', assembler:'', assemblers:[], items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false, _orderLoaded:false, orderDate:'', segments:[],
+  ronda:1, baseDate:'', _r1Armado:null, // §3.5 round 2 (complemento)
+  // inventory semáforo (§3.4)
+  _picks:[], _picksMaxTs:'', _lights:{}, _contradicted:{}, _pollTimer:null, _picksReachable:true };
 
 const BC_STATUS  = { PENDING:'pending', SCANNED:'scanned', UNAVAIL:'unavail', WRONGSYS:'wrongsys', NOSYS:'nosys' };
-const ITEM_STATUS = { PENDING:'pending', COMPLETED:'completed', PARTIAL:'partial', NOBC:'nobc', WRONGSYS:'wrongsys', SKIPPED:'skipped' };
+const ITEM_STATUS = { PENDING:'pending', COMPLETED:'completed', PARTIAL:'partial', NOBC:'nobc', WRONGSYS:'wrongsys', SKIPPED:'skipped', SHORTDATE:'shortdate' };
+// skipped + shortdate both aggregate as "faltante"; kept distinct for the report and metrics
+const SKIP_STATUSES = [ITEM_STATUS.SKIPPED, ITEM_STATUS.SHORTDATE];
+
+/* ── TUNABLES (timing metrics — §3.1 / §3.3) ── */
+const IDLE_GAP_MIN   = 5;    // inter-item gaps longer than this (min) are subtracted from minutosActivos
+const MAX_HANDLE_SEC = 300;  // per-item handling time is capped here (item left open during a break)
+const FLAG_GAP_MIN   = 15;   // any inter-item gap longer than this (min) flags the assembly PAUSA_LARGA
+const FLAG_MIN_SKUS  = 10;   // orders with fewer SKUs than this flag PEDIDO_CHICO (rates are unstable)
+
+/* ── TUNABLES (inventory semáforo — §3.4) ── */
+const POLL_MS           = 10000; // list-screen poll for other hubs' picks (safe down to 5000)
+const FLAG_NOTFOUND_MIN = 3;     // distinct assemblers reporting "no se encontró" before a 🟡 (testimony, never 🔴)
+const MIN_SEARCH_SEC    = 10;    // a faltante faster than this feeds faltantesRapidos
+
+// Flag code → icon + human text (§3.3). Order here is the display order in the ⚑ column.
+const FLAG_META = {
+  CRUZA_DIA:       { icon:'🌙', txt:'La actividad cruza dos fechas distintas' },
+  MULTI_SESION:    { icon:'⏸', txt:'Más de una sesión (se usó 💾 Guardar y salir)' },
+  PAUSA_LARGA:     { icon:'🕐', txt:'Pausa de más de '+FLAG_GAP_MIN+' min entre dos productos' },
+  MULTI_ARMADOR:   { icon:'👥', txt:'Más de un armador en el pedido' },
+  PEDIDO_CHICO:    { icon:'🔹', txt:'Menos de '+FLAG_MIN_SKUS+' SKUs — las tasas son inestables' },
+  INCOMPLETO:      { icon:'⏳', txt:'Terminó con productos aún pendientes' },
+  REPORTE_DIFERIDO:{ icon:'📶', txt:'Reporte encolado sin conexión y subido después' },
+  SIN_TIEMPO:      { icon:'⛔', txt:'Sin tiempo medible — las columnas de tasa no aplican' }
+};
+const FLAG_ORDER = Object.keys(FLAG_META);
 
 /* ── BARCODE MATCH (leading-zero bypass) ── */
 function bcMatch(scanned, system){
@@ -563,24 +802,9 @@ function formatMinExpDate(d){
   const MN=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   return `${String(d.getDate()).padStart(2,'0')}-${MN[d.getMonth()]}-${d.getFullYear()}`;
 }
-
-/* ── EXP DATE INPUT AUTO-FORMATTER ── */
-function formatExpDateInput(inp){
-  let v=inp.value.replace(/\D/g,'');
-  if(v.length>8) v=v.slice(0,8);
-  let f=v.slice(0,2);
-  if(v.length>2) f+='/'+v.slice(2,4);
-  if(v.length>4) f+='/'+v.slice(4,8);
-  inp.value=f;
-  const msg=document.getElementById('exp-msg');
-  if(f.length===10){
-    if(S.activeIdx>=0) S.results[S.activeIdx].expDate=f;
-    inp.className='exp-input exp-ok';
-    if(msg) msg.textContent='';
-  } else {
-    inp.className='exp-input';
-  }
-}
+// Numeric display of the computed minimum expiry — DD/MM/YYYY for the panel banner + report, DD/MM for the list chip
+function minExpDMY(d){ if(!d) return ''; return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; }
+function minExpDM(d){ if(!d) return ''; return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
 
 /* ── BARCODE CLEANING ── */
 function cleanBC(raw){
@@ -735,45 +959,69 @@ async function fetchOrderForHub(hub){
   st.className='fetch-status loading'; st.textContent='⏳ Buscando pedido…';
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>b.disabled=true);
   try{
-    // List all order files for this hub, pick the latest by filename (date-sorted)
+    // Latest DATE, then prefer that date's complemento (-r2) over the base order (§3.5)
     const files=await sbList(`orders/${HUB_SLUG[hub]}/`);
-    const csvFiles=files.filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name));
+    const csvFiles=files.filter(f=>f.name&&f.name.endsWith('.csv'));
     if(!csvFiles.length) throw new Error('sin pedido');
-    const latest=csvFiles[0];
-    const uploadDate=latest.name.replace('.csv','');
-    const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${latest.name}`);
+    const latestDate=csvFiles.map(f=>f.name.replace(/(-r2)?\.csv$/,'')).sort().pop();
+    const r2File=csvFiles.find(f=>f.name===`${latestDate}-r2.csv`);
+    const baseFile=csvFiles.find(f=>f.name===`${latestDate}.csv`);
+    const chosen=r2File||baseFile||csvFiles.sort((a,b)=>b.name.localeCompare(a.name))[0];
+    const isR2=!!r2File;
+    const uploadDate=chosen.name.replace('.csv','');
+    const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${chosen.name}`);
     const parsed=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
-    const items=parsed.data.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
+    const requested=parsed.data.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
+    // §3.5: assemblers never see reserva rows (Inventario hub saliente = 0). Fallback: if the order
+    // carries no inventory data at all, show everything (older / already-pre-filtered / complemento files).
+    const activos=requested.filter(r=>(parseFloat(r['Inventario hub saliente'])||0)>0);
+    const items=(isR2||!activos.length)?requested:activos;
     if(!items.length) throw new Error('sin productos');
     S.items=sortItems(items);
+    S.ronda=isR2?2:1; S.baseDate=latestDate;
+    S._r1Armado = isR2 ? (await armadoMapForHub(hub, latestDate)).map : null;
     st.className='fetch-status ok';
-    st.textContent=`✓ Cargado el ${uploadDate} — ${items.length} productos`;
+    st.textContent=isR2 ? `🔄 Complemento del ${latestDate} — ${items.length} productos` : `✓ Cargado el ${uploadDate} — ${items.length} productos`;
     S._orderLoaded=true; S.orderDate=uploadDate;
-    // Always re-fetch the assembler list here so it's guaranteed fresh
-    await loadAssemblers();
-    const agroup=document.getElementById('assembler-group');
-    const sel=document.getElementById('assembler-select');
-    if(agroup&&sel&&S.assemblers.length){
-      sel.innerHTML='<option value="">— Selecciona armador —</option>'+S.assemblers.map(n=>`<option value="${escH(n)}">${escH(n)}</option>`).join('');
-      sel.value=''; sel.className='assembler-select';
-      agroup.style.display='block';
-    } else if(agroup){
-      // No assemblers configured — hide dropdown and allow direct start
-      agroup.style.display='none';
-      S.assembler='';
-    }
-    updateStartBtn();
-    // Check for any in-progress partial for this hub (any assembler can resume)
-    checkForPartialSave();
+    // §3.6: cache the parsed order so a reload in a dead zone isn't fatal
+    try{ localStorage.setItem('calii_order_cache_'+HUB_SLUG[hub], JSON.stringify({orderDate:uploadDate, ronda:S.ronda, baseDate:latestDate, items:S.items})); }catch(_){}
+    await finishOrderLoad(hub);
   }catch(e){
-    st.className='fetch-status error';
-    st.textContent='⚠ No hay pedido cargado para este hub. Contacta al coordinador.';
+    // §3.6: fall back to the last cached order for this hub
+    const cached=(()=>{ try{ return JSON.parse(localStorage.getItem('calii_order_cache_'+HUB_SLUG[hub])||'null'); }catch(_){ return null; } })();
+    if(cached&&cached.items&&cached.items.length&&S.hub===hub){
+      S.items=cached.items; S.orderDate=cached.orderDate; S.ronda=cached.ronda||1; S.baseDate=cached.baseDate||cached.orderDate; S._r1Armado=null;
+      S._orderLoaded=true;
+      st.className='fetch-status ok';
+      st.textContent=`⚠ Sin conexión — usando el pedido guardado del ${cached.orderDate} (${cached.items.length} prod.)`;
+      await finishOrderLoad(hub);
+    } else {
+      st.className='fetch-status error';
+      st.textContent='⚠ No hay pedido cargado para este hub. Contacta al coordinador.';
+    }
   }finally{
     document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{
       b.disabled=false;
       if(b.textContent.trim()===hub) b.classList.add('selected');
     });
   }
+}
+
+// Shared tail of a successful/ cached order load: assembler dropdown, start button, partial check
+async function finishOrderLoad(hub){
+  try{ await loadAssemblers(); }catch(_){}
+  const agroup=document.getElementById('assembler-group');
+  const sel=document.getElementById('assembler-select');
+  if(agroup&&sel&&S.assemblers.length){
+    sel.innerHTML='<option value="">— Selecciona armador —</option>'+S.assemblers.map(n=>`<option value="${escH(n)}">${escH(n)}</option>`).join('');
+    sel.value=''; sel.className='assembler-select';
+    agroup.style.display='block';
+  } else if(agroup){
+    agroup.style.display='none';
+    S.assembler='';
+  }
+  updateStartBtn();
+  checkForPartialSave();
 }
 
 /* ── COORDINATOR ── */
@@ -783,6 +1031,10 @@ async function loadCoordinatorScreen(){
   document.getElementById('coord-archive').style.display='none';
   document.getElementById('archive-toggle').textContent='📁 Ver historial de reportes';
   S._archiveLoaded=false; S._archiveData=[];
+  _cierreCache=null;
+  document.getElementById('cierre-result').innerHTML='';
+  refreshCierreStatus();
+  flushOutbox(); // §3.6 — a good moment to drain any queued uploads
 
   // Load assembler list
   await loadAssemblers();
@@ -811,30 +1063,39 @@ async function loadCoordinatorScreen(){
     const dateLabel=latestOrder?.name?.replace('.csv','')||'';
     const orderFilePath=latestOrder?`orders/${HUB_SLUG[hub]}/${latestOrder.name}`:'';
     const clearBtn=loaded?`<button class="coord-del-btn" onclick="clearHubOrder('${escH(orderFilePath)}','${escH(hub)}','${escH(dateLabel)}')" title="Eliminar pedido cargado">🗑</button>`:'';
+    const noSurtidoBtn=loaded?`<button class="coord-del-btn" onclick="downloadNoSurtido('${escH(hub)}','${escH(dateLabel)}')" title="Descargar SKUs no surtidos (reserva)">📄</button>`:'';
     return `<div class="coord-hub-row">
       <span class="coord-hub-name">${escH(hub)}</span>
       <span class="coord-hub-badge ${loaded?'loaded':'empty'}" id="badge-${HUB_SLUG[hub]}">${loaded?`✓ ${escH(dateLabel)}`:'Sin pedido'}</span>
       <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
-      ${clearBtn}
+      ${noSurtidoBtn}${clearBtn}
     </div>`;
   }).join('');
 
-  // Render active reports
+  // Render active reports — round-2 reports sit indented under their round-1 sibling (same hub + date)
   const allActive=hubData.flatMap(({hub,activeReports})=>
     activeReports.map(f=>({hub, path:`reports/${HUB_SLUG[hub]}/${f.name}`, name:f.name}))
-  ).sort((a,b)=>b.name.localeCompare(a.name));
+  ).sort((a,b)=>{
+    const da=a.name.slice(0,10), db=b.name.slice(0,10);
+    if(da!==db) return db.localeCompare(da);
+    if(a.hub!==b.hub) return a.hub.localeCompare(b.hub);
+    const ra=/_r2_/.test(a.name)?1:0, rb=/_r2_/.test(b.name)?1:0;
+    if(ra!==rb) return ra-rb;
+    return b.name.localeCompare(a.name);
+  });
 
   if(!allActive.length){
     document.getElementById('coord-reports').innerHTML='<div class="coord-empty">No hay reportes activos todavía.</div>';
   } else {
     document.getElementById('coord-reports').innerHTML=allActive.map(r=>{
-      const {label,dateStr}=reportDisplayInfo(r.name);
+      const {label,dateStr,isR2}=reportDisplayInfo(r.name);
       const dlFilename=`${r.hub.replace(/\s+/g,'_')}_${r.name}`;
-      return `<div class="coord-report-row">
+      return `<div class="coord-report-row${isR2?' r2-child':''}">
         <div class="coord-report-info">
           <div class="coord-report-hub">${escH(r.hub)}</div>
           <div class="coord-report-meta">${escH(dateStr)} · ${escH(label)}</div>
         </div>
+        <button class="coord-del-btn" onclick="openRegistro('${escH(r.path)}','${escH(r.hub)}','${escH(dateStr)}')" title="Copiloto de registro">📋</button>
         <button class="coord-dl-btn" onclick="downloadRemoteReport('${escH(r.path)}','${escH(dlFilename)}')">⬇ CSV</button>
         <button class="coord-del-btn" onclick="deleteReport('${escH(r.path)}','${escH(r.hub)}','${escH(label)}')" title="Eliminar">🗑</button>
       </div>`;
@@ -850,7 +1111,10 @@ async function loadCoordinatorScreen(){
 function reportDisplayInfo(name){
   const base=name.replace('.csv','');
   const dateStr=base.slice(0,10);
-  const suffix=base.length>10 ? base.slice(11) : '';
+  let suffix=base.length>10 ? base.slice(11) : '';
+  const isR2=/^r2_/.test(suffix);
+  if(isR2) suffix=suffix.slice(3);
+  const r2Tag=isR2?'🔄 Complemento · ':'';
   let label;
   if(!suffix) label='Armado 1';
   else if(/^\d{2}-\d{2}$/.test(suffix)) label=suffix.replace('-',':'); // legacy: time only
@@ -862,7 +1126,7 @@ function reportDisplayInfo(name){
   }
   else if(/^\d+$/.test(suffix)) label=`Armado ${suffix}`;
   else label=suffix.replace(/_/g,' ');
-  return {label, dateStr};
+  return {label:r2Tag+label, dateStr, isR2};
 }
 
 let _archiveOpen=false;
@@ -907,6 +1171,7 @@ async function uploadHubCSV(input, hub){
     const parsed=Papa.parse(text,{header:true,dynamicTyping:false,skipEmptyLines:true});
     const items=parsed.data.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
     if(!items.length) throw new Error('CSV sin productos válidos');
+    const fields=parsed.meta.fields||Object.keys(items[0]);
 
     // Check for suspicious barcodes
     const suspicious=detectSuspiciousBarcodes(items);
@@ -919,7 +1184,7 @@ async function uploadHubCSV(input, hub){
         `Se detectaron ${suspicious.length} código${suspicious.length>1?'s':''} de barras que terminan en múltiples ceros — señal de pérdida de precisión al exportar como número desde Google Sheets o Excel.\n\n${examples}${extra}\n\nSe recomienda re-exportar con la columna de códigos como formato Texto. ¿Subir de todas formas?`,
         'Subir de todas formas',
         'm-danger',
-        ()=>checkPartialThenUpload(hub, text, items, badge)
+        ()=>checkPartialThenUpload(hub, text, items, badge, fields)
       );
       document.getElementById('m-cancel').onclick=()=>{
         if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Sin pedido'; }
@@ -927,26 +1192,32 @@ async function uploadHubCSV(input, hub){
       };
       return;
     }
-    await checkPartialThenUpload(hub, text, items, badge);
+    await checkPartialThenUpload(hub, text, items, badge, fields);
   }catch(e){
     if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Error'; }
     toast('❌ Error: '+e.message);
   }
 }
 
-async function doUpload(hub, text, items, badge){
+async function doUpload(hub, text, items, badge, fields){
   if(badge){ badge.className='coord-hub-badge uploading'; badge.textContent='Subiendo…'; }
   try{
     await sbUpload(orderPath(hub), text);
+    // §3.5: keep the FULL request (activos + reserva) verbatim for the round-2 cross-check
+    const od=todayStr();
+    sbUpload(`pedido_completo/${HUB_SLUG[hub]}/${od}.json`,
+      JSON.stringify({orderDate:od, hub, uploadedAt:new Date().toISOString(), fields:fields||[], rows:items}),
+      'application/json').catch(e=>console.warn('pedido_completo upload failed:',e));
+    const reserva=items.filter(r=>!((parseFloat(r['Inventario hub saliente'])||0)>0)).length;
     if(badge){ badge.className='coord-hub-badge loaded'; badge.textContent=`✓ ${todayStr()} (${items.length} prod.)`; }
-    toast(`✓ ${hub} — ${items.length} productos cargados`);
+    toast(`✓ ${hub} — ${items.length} productos${reserva?` (${reserva} en reserva)`:''}`);
   }catch(e){
     if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Error'; }
     toast('❌ Error al subir: '+e.message);
   }
 }
 
-async function checkPartialThenUpload(hub, text, items, badge){
+async function checkPartialThenUpload(hub, text, items, badge, fields){
   try{
     const partialFiles=(await sbList(`partials/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.json'));
     if(partialFiles.length>0){
@@ -957,13 +1228,13 @@ async function checkPartialThenUpload(hub, text, items, badge){
         'm-danger',
         async ()=>{
           await Promise.all(partialFiles.map(f=>sbDelete(`partials/${HUB_SLUG[hub]}/${f.name}`).catch(()=>{})));
-          await doUpload(hub, text, items, badge);
+          await doUpload(hub, text, items, badge, fields);
         }
       );
       return;
     }
   }catch(_){}
-  await doUpload(hub, text, items, badge);
+  await doUpload(hub, text, items, badge, fields);
 }
 
 function clearHubOrder(path, hub, dateLabel){
@@ -1016,7 +1287,9 @@ function showLegend(){
 
 ⚠️  Parcial — cantidad diferente a la solicitada, o con problema en código
 
-❌  Faltante — producto no disponible (0 armado)
+❌  Faltante — producto no se encontró (0 armado)
+
+📅  Faltante (fecha corta) — la fecha del producto no cumple el mínimo (0 armado)
 
 Sin ícono — Pendiente, aún sin confirmar
 
@@ -1039,10 +1312,12 @@ function getAssemblersSlug(results, fallback=''){
 
 /* ── REPORT PATH (timestamp-based, sync) ── */
 // assemblerSlug is already-slugified (output of getAssemblersSlug) — no internal slugify applied
-function getReportPath(hub, assemblerSlug=''){
+// ronda 2 → reports/{slug}/{date}_r2_{HH-MM}_{Armadores}.csv (§3.5) — R1's path is unchanged
+function getReportPath(hub, assemblerSlug='', ronda=1){
   const t=new Date(), d=localDateStr(t), hm=t.toTimeString().slice(0,5).replace(':','-');
   const aslug=assemblerSlug?'_'+assemblerSlug:'';
-  const suffix=`_${hm}${aslug}`;
+  const rTag=ronda===2?'r2_':'';
+  const suffix=`_${rTag}${hm}${aslug}`;
   return {path:`reports/${HUB_SLUG[hub]}/${d}${suffix}.csv`, suffix};
 }
 
@@ -1054,37 +1329,71 @@ function startAssembly(){
   const pn=document.getElementById('partial-save-notice'); if(pn){ pn.style.display='none'; pn.innerHTML=''; }
   S.results=S.items.map(item=>{
     const bc=cleanBC(item['Código de barras']);
-    return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS, scannedBC:null, expDate:null, confirmedAt:null, assembler:null };
+    return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS, scannedBC:null, confirmedAt:null, assembler:null,
+      openedAt:null, firstOpenedAt:null, touches:0, handleSec:null, bcAttempts:0 };
   });
+  S.segments=[newSegment()];
+  S._picks=[]; S._picksMaxTs=''; S._lights={}; S._contradicted={}; S._picksReachable=true; _revisarOpen=false;
   S.listScrollY=0; buildList(); showScreen('list');
+  loadPicks().then(()=>{ renderList(); }); startPicksPoll();
+}
+
+/* ── TIMING SEGMENTS (§3.1) — one open segment per working session; the overnight gap between
+   two segments is never counted toward either minutes figure ── */
+function newSegment(){ return { start:new Date().toISOString(), end:null, assembler:S.assembler||'' }; }
+function closeOpenSegment(){
+  const seg=S.segments[S.segments.length-1];
+  if(seg && !seg.end) seg.end=new Date().toISOString();
+}
+function computeHandleSec(r){
+  if(!r || !r.openedAt) return null;
+  const secs=Math.round((Date.now()-new Date(r.openedAt).getTime())/1000);
+  return Math.min(Math.max(0,secs), MAX_HANDLE_SEC);
 }
 
 /* ── LIST ── */
 function buildList(){ document.getElementById('list-hub').textContent=S.hub; renderList(); }
+function itemRowHtml(item,i){
+  const result=S.results[i], bc=cleanBC(item['Código de barras']);
+  const pos=String(item['Posición armado']||'—').replace(/[\[\]]/g,'').trim();
+  const name=item['Producto']||'Sin nombre', unit=item['Kg/Pz']||'Pz';
+  const rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
+  const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
+  const imgUrl=getImgUrl(item);
+  const minExpDate=computeMinExpDate(item);
+  const expChip=minExpDate?`<span class="row-exp-chip">📅 ${escH(minExpDM(minExpDate))}</span>`:'';
+  const lt=activeLight(i);
+  const lightChip=lt?`<span class="light-chip light-${lt.color}">${lt.color==='rojo'?'🔴':'🟡'}</span>`:'';
+  const revChip=S._contradicted[i]?`<span class="revisar-chip">🔁</span>`:'';
+  const icon={[ITEM_STATUS.COMPLETED]:'✅',[ITEM_STATUS.PARTIAL]:'⚠️',[ITEM_STATUS.SKIPPED]:'❌',[ITEM_STATUS.SHORTDATE]:'📅',[ITEM_STATUS.NOBC]:'⚠️',[ITEM_STATUS.PENDING]:''}[result.status]||'';
+  const thumb=imgUrl?`<img src="${escH(imgUrl)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'row-thumb-ph',textContent:'📦'}))">` :`<span class="row-thumb-ph">📦</span>`;
+  return `<div class="item-row status-${result.status}" id="item-row-${i}" onclick="openDetail(${i})">
+      <div class="row-thumb">${thumb}</div>
+      <div class="row-body">
+        <div class="row-name">${escH(name)}</div>
+        <div class="row-meta"><span class="row-pos">${escH(pos)}</span><span class="row-qty">${reqQ} ${escH(unit)}</span>${expChip}${lightChip}${revChip}${!bc?'<span style="font-size:11px;color:var(--gray-400)">sin código</span>':''}</div>
+      </div>
+      <div class="row-right"><span class="row-status">${icon}</span><span class="row-chevron">›</span></div>
+    </div>
+    <div id="detail-panel-${i}" class="item-expand-panel" style="display:none"></div>`;
+}
 function renderList(){
   const total=S.items.length, done=S.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
   const pct=total?Math.round(done/total*100):0;
   document.getElementById('list-prog-fill').style.width=pct+'%';
   document.getElementById('list-prog-label').textContent=`${done}/${total}`;
-  document.getElementById('list-body').innerHTML=S.items.map((item,i)=>{
-    const result=S.results[i], bc=cleanBC(item['Código de barras']);
-    const pos=String(item['Posición armado']||'—').replace(/[\[\]]/g,'').trim();
-    const name=item['Producto']||'Sin nombre', unit=item['Kg/Pz']||'Pz';
-    const rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
-    const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
-    const imgUrl=getImgUrl(item);
-    const icon={[ITEM_STATUS.COMPLETED]:'✅',[ITEM_STATUS.PARTIAL]:'⚠️',[ITEM_STATUS.SKIPPED]:'❌',[ITEM_STATUS.NOBC]:'⚠️',[ITEM_STATUS.PENDING]:''}[result.status]||'';
-    const thumb=imgUrl?`<img src="${escH(imgUrl)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'row-thumb-ph',textContent:'📦'}))">` :`<span class="row-thumb-ph">📦</span>`;
-    return `<div class="item-row status-${result.status}" id="item-row-${i}" onclick="openDetail(${i})">
-      <div class="row-thumb">${thumb}</div>
-      <div class="row-body">
-        <div class="row-name">${escH(name)}</div>
-        <div class="row-meta"><span class="row-pos">${escH(pos)}</span><span class="row-qty">${reqQ} ${escH(unit)}</span>${!bc?'<span style="font-size:11px;color:var(--gray-400)">sin código</span>':''}</div>
-      </div>
-      <div class="row-right"><span class="row-status">${icon}</span><span class="row-chevron">›</span></div>
-    </div>
-    <div id="detail-panel-${i}" class="item-expand-panel" style="display:none"></div>`;
-  }).join('');
+  // Contradicted skips collect in a collapsed section at the bottom — pending rows never move (§3.4)
+  const main=[], revisar=[];
+  S.items.forEach((item,i)=>{ (S._contradicted[i]?revisar:main).push(itemRowHtml(item,i)); });
+  let html=main.join('');
+  if(revisar.length){
+    html+=`<div class="revisar-section" id="revisar-section">
+      <button class="revisar-head" onclick="toggleRevisar()">🔁 ${revisar.length} por revisar <span id="revisar-caret">${_revisarOpen?'▾':'▸'}</span></button>
+      <div id="revisar-body" style="display:${_revisarOpen?'block':'none'}">${revisar.join('')}</div>
+    </div>`;
+  }
+  document.getElementById('list-body').innerHTML=html;
+  updateRevisarHeaderChip();
 }
 function updateListProgress(){
   const total=S.items.length, done=S.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
@@ -1102,6 +1411,14 @@ function openDetail(idx){
   const panel=document.getElementById(`detail-panel-${idx}`);
   const row=document.getElementById(`item-row-${idx}`);
   if(!panel) return;
+  // Timing: every open overwrites openedAt (start of the current handling attempt); count touches
+  const _r=S.results[idx];
+  if(_r){
+    const _iso=new Date().toISOString();
+    _r.openedAt=_iso;
+    if(!_r.firstOpenedAt) _r.firstOpenedAt=_iso;
+    _r.touches=(_r.touches||0)+1;
+  }
   panel.innerHTML=buildDetailPanelHtml(idx);
   panel.style.display='block';
   if(row) row.classList.add('expanded');
@@ -1129,9 +1446,8 @@ function buildDetailPanelHtml(idx){
   const imgUrl=getImgUrl(item);
   const pos=String(item['Posición armado']||'—').replace(/[\[\]]/g,'').trim();
   const inventory=String(item['Inventario hub saliente']||'').trim();
-  const minExpDate=computeMinExpDate(item), minExpStr=formatMinExpDate(minExpDate);
+  const minExpDate=computeMinExpDate(item);
   const savedPicked=result.picked!==null?result.picked:'';
-  const savedExp=(result.expDate&&result.expDate!=='N/A')?result.expDate:'';
 
   // BC section
   let bcHtml='';
@@ -1150,22 +1466,17 @@ function buildDetailPanelHtml(idx){
   // Image
   const imgHtml=imgUrl?`<div style="text-align:center;padding:10px 16px;background:var(--gray-50);border-bottom:1px solid var(--gray-200)"><img src="${escH(imgUrl)}" alt="" style="max-height:110px;max-width:100%;object-fit:contain" onerror="this.parentElement.style.display='none'"></div>`:'';
 
-  // Expiry date section
-  let expHtml;
-  if(result.expDate==='N/A'){
-    expHtml=`<div class="d-section">
-      <div class="d-section-title">📅 Fecha de vencimiento <span class="ok-badge" style="background:#FFF8E1;color:#E65100">Sin fecha</span></div>
-      <div class="nobc-pill"><span>📅 Sin fecha de vencimiento — se registrará en el reporte</span><button onclick="resetExpDate()">✕</button></div>
-    </div>`;
-  } else {
-    expHtml=`<div class="d-section">
-      <div class="d-section-title">📅 Fecha de vencimiento <span class="req-badge">Requerido</span></div>
-      ${minExpStr?`<div class="min-exp-info">Mínimo aceptable: <strong>${escH(minExpStr)}</strong></div>`:''}
-      <input id="exp-date-field" class="exp-input${savedExp.length===10?' exp-ok':''}" type="text" inputmode="numeric" placeholder="DD/MM/AAAA" maxlength="10" value="${escH(savedExp)}" oninput="formatExpDateInput(this)" autocomplete="off">
-      <div class="bc-msg" id="exp-msg"></div>
-      <button class="nobc-btn" onclick="markNoExpDate()">Sin fecha de vencimiento</button>
-    </div>`;
-  }
+  // Read-only minimum-expiry banner — shown directly above the qty input; nothing rendered when no shelf-life columns
+  const minExpBanner=minExpDate?`<div class="min-exp-banner">
+        <span class="min-exp-banner-icon">📅</span>
+        <div>
+          <div class="min-exp-banner-main">Vencimiento mínimo: ${escH(minExpDMY(minExpDate))}</div>
+          <div class="min-exp-banner-sub">No armar producto con fecha anterior</div>
+        </div>
+      </div>`:'';
+
+  // Inventory semáforo — shows the arithmetic so it earns trust; green renders nothing (§3.4)
+  const semBlock=semBlockHtml(idx);
 
   return `${imgHtml}
     <div class="d-info" style="padding:12px 16px 8px">
@@ -1178,8 +1489,9 @@ function buildDetailPanelHtml(idx){
       <div class="d-requested"><span class="d-req-label">Solicitado:</span><span class="d-req-num">${reqQ}</span><span class="d-req-unit">${escH(unit)}</span></div>
     </div>
     ${bcHtml}
-    ${expHtml}
     <div class="d-section"><div class="d-section-title">📦 Cantidad a armar</div>
+      ${semBlock}
+      ${minExpBanner}
       <div class="qty-row">
         <button class="qty-stepper" onclick="stepQty(-1)">−</button>
         <input id="qty-field" class="qty-input" type="number" inputmode="decimal" min="0" step="${unit==='Kg'?'0.01':'1'}" placeholder="0" value="${escH(String(savedPicked))}" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmItem();}">
@@ -1187,10 +1499,53 @@ function buildDetailPanelHtml(idx){
         <span class="qty-unit-lbl">${escH(unit)}</span>
       </div>
     </div>
-    <div class="inline-actions">
-      <button class="btn-skip" onclick="markFaltante()">⚑ Faltante</button>
-      <button class="btn-confirm" onclick="confirmItem()">Confirmar ✓</button>
+    <div class="inline-actions" id="inline-actions">${inlineActionsHtml()}</div>`;
+}
+
+// Semáforo block for the open panel. Only rendered for a pending item whose light is 🟡 or 🔴.
+function semBlockHtml(idx){
+  const lt=activeLight(idx);
+  if(!lt) return '';
+  if(lt.color==='rojo'){
+    return `<div class="sem-block sem-rojo">
+      <div class="sem-main">🔴 Ya no hay — no lo busques</div>
+      <div class="sem-sub">Inventario CH ${lt.inventario} · otros hubs ya armaron ${lt.consumido} hoy${lt.hora?' · '+lt.hora:''}</div>
     </div>`;
+  }
+  if(lt.basis==='testimonio'){
+    return `<div class="sem-block sem-amarillo">
+      <div class="sem-main">🟡 ${lt.noEnc} armadores no lo encontraron hoy</div>
+      <div class="sem-sub">Búscalo, y si no está a la vista marca faltante y sigue</div>
+    </div>`;
+  }
+  return `<div class="sem-block sem-amarillo">
+      <div class="sem-main">🟡 Puede que ya no haya</div>
+      <div class="sem-sub">Inventario CH ${lt.inventario} · otros hubs ya armaron ${lt.consumido} hoy · pediste ${lt.solicitado}</div>
+      <div class="sem-sub">Búscalo, y si no está a la vista marca faltante y sigue</div>
+    </div>`;
+}
+
+/* Default action row for the open panel */
+function inlineActionsHtml(){
+  return `<button class="btn-skip" onclick="showFaltanteReasons()">⚑ Faltante</button>
+      <button class="btn-confirm" onclick="confirmItem()">Confirmar ✓</button>`;
+}
+/* ⚑ Faltante does not resolve the item — it opens a two-button reason sub-branch (still zero typing) */
+function showFaltanteReasons(){
+  const el=document.getElementById('inline-actions');
+  if(!el) return;
+  el.innerHTML=`<div class="faltante-branch">
+    <div class="faltante-branch-q">¿Por qué no se arma?</div>
+    <div class="faltante-branch-btns">
+      <button class="fb-btn" onclick="markFaltante('notfound')">📭 No se encontró</button>
+      <button class="fb-btn" onclick="markFaltante('shortdate')">📅 Fecha no cumple</button>
+      <button class="fb-btn fb-back" onclick="cancelFaltanteReasons()" title="Volver">←</button>
+    </div>
+  </div>`;
+}
+function cancelFaltanteReasons(){
+  const el=document.getElementById('inline-actions');
+  if(el) el.innerHTML=inlineActionsHtml();
 }
 
 /* ── BC HANDLERS ── */
@@ -1205,7 +1560,9 @@ function onBCInput(){
     setTimeout(()=>document.getElementById('qty-field')?.focus(),120);
   } else if(val.length>=bc.length){
     field.className='bc-input bc-err'; icon.textContent='❌'; msg.className='bc-msg err-msg'; msg.textContent='❌ Código no coincide — verifica el producto';
-    S.results[idx].bcStatus=BC_STATUS.PENDING; toast('⚠ Código incorrecto');
+    S.results[idx].bcStatus=BC_STATUS.PENDING;
+    S.results[idx].bcAttempts=(S.results[idx].bcAttempts||0)+1; // scan-friction signal
+    toast('⚠ Código incorrecto');
   } else { field.className='bc-input'; icon.textContent='⬜'; msg.textContent=''; }
 }
 function onBCKeydown(e){
@@ -1216,11 +1573,8 @@ function refreshDetailPanel(){
   const panel=document.getElementById(`detail-panel-${S.activeIdx}`);
   if(!panel||panel.style.display==='none') return;
   const qtyVal=document.getElementById('qty-field')?.value||'';
-  const expVal=document.getElementById('exp-date-field')?.value||'';
   panel.innerHTML=buildDetailPanelHtml(S.activeIdx);
   const qf=document.getElementById('qty-field'); if(qf&&qtyVal) qf.value=qtyVal;
-  // Only restore typed exp value if not already in a bypass/saved state
-  const ef=document.getElementById('exp-date-field'); if(ef&&expVal) ef.value=expVal;
 }
 function markBCUnavail(){ S.results[S.activeIdx].bcStatus=BC_STATUS.UNAVAIL; S.results[S.activeIdx].scannedBC=null; refreshDetailPanel(); setTimeout(()=>document.getElementById('qty-field')?.focus(),120); }
 function markBCWrongSys(){
@@ -1230,8 +1584,6 @@ function markBCWrongSys(){
   refreshDetailPanel(); setTimeout(()=>document.getElementById('qty-field')?.focus(),120);
 }
 function resetBC(){ S.results[S.activeIdx].bcStatus=BC_STATUS.PENDING; S.results[S.activeIdx].scannedBC=null; refreshDetailPanel(); setTimeout(()=>document.getElementById('bc-field')?.focus(),120); }
-function markNoExpDate(){ S.results[S.activeIdx].expDate='N/A'; refreshDetailPanel(); setTimeout(()=>document.getElementById('qty-field')?.focus(),120); }
-function resetExpDate(){ S.results[S.activeIdx].expDate=null; refreshDetailPanel(); setTimeout(()=>document.getElementById('exp-date-field')?.focus(),120); }
 
 /* ── QTY ── */
 function stepQty(dir){
@@ -1252,35 +1604,15 @@ function confirmItem(){
     if(!bcMatch(scanned,bc)){ toast('❌ Código no coincide. Usa "Código equivocado en sistema" si el código físico es diferente.'); return; }
     result.bcStatus=BC_STATUS.SCANNED; result.scannedBC=scanned;
   }
-  // Expiry date validation
-  if(result.expDate!=='N/A'){
-    const expField=document.getElementById('exp-date-field');
-    const expStr=(expField?.value||'').trim();
-    if(expStr===''){ toast('⚠ Ingresa la fecha de vencimiento'); expField?.focus(); return; }
-    if(!/^\d{2}\/\d{2}\/\d{4}$/.test(expStr)){ toast('⚠ Formato inválido — usa DD/MM/AAAA'); expField?.focus(); return; }
-    const [dd,mm,yyyy]=expStr.split('/').map(Number);
-    if(mm<1||mm>12){ toast('⚠ Mes inválido (01–12)'); if(expField){ expField.className='exp-input exp-err'; expField.focus(); } return; }
-    if(dd<1||dd>31){ toast('⚠ Día inválido (01–31)'); if(expField){ expField.className='exp-input exp-err'; expField.focus(); } return; }
-    // Compare against minimum acceptable date
-    const entered=new Date(yyyy,mm-1,dd);
-    const minDate=computeMinExpDate(item);
-    if(minDate&&entered<minDate){
-      const minStr=formatMinExpDate(minDate);
-      toast(`⚠ Fecha muy próxima — mínimo aceptable: ${minStr}`,3000);
-      if(expField){ expField.className='exp-input exp-err'; expField.focus(); }
-      const msg=document.getElementById('exp-msg');
-      if(msg){ msg.className='bc-msg err-msg'; msg.textContent=`Mínimo: ${minStr}`; }
-      return;
-    }
-    result.expDate=expStr;
-  }
   const qField=document.getElementById('qty-field'), qStr=(qField?.value||'').trim();
   if(qStr===''){ toast('⚠ Ingresa la cantidad a armar'); qField?.focus(); return; }
   const picked=parseFloat(qStr);
   if(isNaN(picked)||picked<0){ toast('⚠ Cantidad inválida'); qField?.focus(); return; }
   result.confirmedAt=new Date();
   result.assembler=S.assembler;
+  result.handleSec=computeHandleSec(result);
   result.picked=picked;
+  const lt0=S._lights[idx]; result.luzAlSkip=lt0?lt0.color:'sin_dato'; // light shown at the moment of action (§3.4)
   const tol=unit==='Kg'?0.05:0.5;
   if(picked===0) result.status=ITEM_STATUS.SKIPPED;
   else if(result.bcStatus===BC_STATUS.UNAVAIL) result.status=ITEM_STATUS.NOBC;
@@ -1289,20 +1621,25 @@ function confirmItem(){
   else result.status=ITEM_STATUS.PARTIAL;
   collapseDetail(); updateListRow(idx); updateListProgress();
   savePartialProgress();
+  recordPick(idx); pollPicks(); // log this pick, then immediately refresh from others
 }
-function markFaltante(){
-  const idx=S.activeIdx;
-  S.results[idx].picked=0; S.results[idx].bcStatus=BC_STATUS.PENDING;
-  S.results[idx].status=ITEM_STATUS.SKIPPED; S.results[idx].expDate=null;
-  S.results[idx].confirmedAt=new Date();
-  S.results[idx].assembler=S.assembler;
+// reason: 'notfound' → status skipped ("Faltante") · 'shortdate' → status shortdate ("Faltante (fecha corta)")
+function markFaltante(reason){
+  const idx=S.activeIdx, r=S.results[idx];
+  const lt0=S._lights[idx]; r.luzAlSkip=lt0?lt0.color:'sin_dato'; // light shown at the moment of the skip
+  r.picked=0; r.bcStatus=BC_STATUS.PENDING;
+  r.status=reason==='shortdate'?ITEM_STATUS.SHORTDATE:ITEM_STATUS.SKIPPED;
+  r.confirmedAt=new Date();
+  r.assembler=S.assembler;
+  r.handleSec=computeHandleSec(r);
   collapseDetail(); updateListRow(idx); updateListProgress();
   savePartialProgress();
+  recordPick(idx); pollPicks();
 }
 function updateListRow(idx){
   const row=document.getElementById(`item-row-${idx}`);
   if(row){
-    const r=S.results[idx], icon={completed:'✅',partial:'⚠️',skipped:'❌',nobc:'⚠️',wrongsys:'⚠️',pending:''}[r.status]||'';
+    const r=S.results[idx], icon={completed:'✅',partial:'⚠️',skipped:'❌',shortdate:'📅',nobc:'⚠️',wrongsys:'⚠️',pending:''}[r.status]||'';
     const sd=row.querySelector('.row-status'); if(sd) sd.textContent=icon;
     row.className=`item-row status-${r.status}`;
   }
@@ -1316,12 +1653,16 @@ function requestFinish(){
   else showSummary();
 }
 function showSummary(){
-  // Capture state immediately — prevents stale/empty data if newOrder() fires before upload
-  const hub=S.hub, assembler=S.assembler, items=S.items, results=S.results;
+  // Close the current timing segment, then capture state immediately —
+  // prevents stale/empty data if newOrder() fires before upload
+  closeOpenSegment();
+  stopPicksPoll();
+  const hub=S.hub, assembler=S.assembler, items=S.items, results=S.results, orderDate=S.orderDate, segments=S.segments.slice();
+  const ronda=S.ronda, r1Armado=S._r1Armado;
   const total=items.length;
   const ok=results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
   const partial=results.filter(r=>[ITEM_STATUS.PARTIAL,ITEM_STATUS.NOBC,ITEM_STATUS.WRONGSYS].includes(r.status)).length;
-  const skipped=results.filter(r=>r.status===ITEM_STATUS.SKIPPED).length;
+  const skipped=results.filter(r=>SKIP_STATUSES.includes(r.status)).length;
   const now=new Date();
   document.getElementById('sum-hub-p').textContent=`${hub}${assembler?' · '+assembler:''} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`;
   document.getElementById('st-total').textContent=total;
@@ -1329,14 +1670,14 @@ function showSummary(){
   document.getElementById('st-part').textContent=partial;
   document.getElementById('st-skip').textContent=skipped;
   document.getElementById('sum-list').innerHTML=items.map((item,i)=>{
-    const r=results[i], icon={completed:'✅',partial:'⚠️',skipped:'❌',nobc:'⚠️',wrongsys:'⚠️',pending:'⏳'}[r.status]||'⏳';
+    const r=results[i], icon={completed:'✅',partial:'⚠️',skipped:'❌',shortdate:'📅',nobc:'⚠️',wrongsys:'⚠️',pending:'⏳'}[r.status]||'⏳';
     const unit=item['Kg/Pz']||'Pz', rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
     const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
     const pick=r.picked!==null?(unit==='Kg'?Number(r.picked).toFixed(2):Math.round(r.picked)):'—';
     const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
     const bcNote=r.bcStatus===BC_STATUS.UNAVAIL?' · ⚠ BC ilegible':r.bcStatus===BC_STATUS.WRONGSYS?' · ⚠ Discrepancia':'';
-    const expNote=r.expDate?` · Venc: ${r.expDate}`:'';
-    return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}${expNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
+    const skipNote=r.status===ITEM_STATUS.SHORTDATE?' · 📅 Fecha corta':'';
+    return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}${skipNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
   }).join('');
   // NOTE: clearPartialSave is intentionally NOT called here yet.
   // The partial (100% complete) is kept alive until the upload confirms.
@@ -1346,8 +1687,8 @@ function showSummary(){
   // Upload immediately with captured state — no async gap where S.* could be cleared
   // Slug includes all unique assemblers who worked the order (e.g. "Jose_Diego")
   const aslug=getAssemblersSlug(results, assembler);
-  const {path, suffix}=getReportPath(hub, aslug);
-  const {csv}=generateCSV(items, results, hub, assembler, suffix);
+  const {path, suffix}=getReportPath(hub, aslug, ronda);
+  const {csv}=generateCSV(items, results, hub, assembler, suffix, {ronda, r1Armado});
 
   const statusEl=document.getElementById('sum-upload-status');
   const finishBtn=document.getElementById('btn-terminar');
@@ -1357,33 +1698,49 @@ function showSummary(){
     statusEl.textContent='☁️ Guardando reporte…';
     finishBtn.disabled=true;
     _retryUploadFn=null;
+    let outcome;
     try{
-      await sbUpload(path, csv);
-      // Only clear the partial once we know the report is safely in Supabase
-      clearPartialSave(hub);
-      statusEl.className='sum-upload-status ok';
-      statusEl.textContent='✅ Reporte guardado correctamente';
-      finishBtn.textContent='Terminar armado';
-      finishBtn.onclick=newOrder;
-      finishBtn.disabled=false;
+      outcome=await sbUploadQueued(path, csv, {kind:'report', hub, orderDate, contentType:'text/csv'});
     } catch(e){
       console.warn('Report upload failed:',e);
       statusEl.className='sum-upload-status fail';
       statusEl.innerHTML='❌ Error al guardar el reporte. <button class="btn-retry" onclick="retryUpload()">Reintentar</button><span style="font-size:11px;display:block;margin-top:6px;color:#888">Tu progreso está guardado. Puedes salir y volver a entrar para finalizar.</span>';
       _retryUploadFn=attemptUpload;
-      // Button goes home WITHOUT clearing the partial — assembler can re-enter and retry
       finishBtn.textContent='Salir (reporte pendiente)';
       finishBtn.onclick=exitKeepingPartial;
       finishBtn.disabled=false;
+      return;
     }
+    if(outcome==='uploaded'){
+      clearPartialSave(hub); // safe — the report is in Supabase
+      uploadMetricsSidecar(path, items, results, segments, hub, orderDate, false, ronda);
+      statusEl.className='sum-upload-status ok';
+      statusEl.textContent='✅ Reporte guardado correctamente';
+    } else { // 'queued' — offline. Partial stays; flushOutbox() clears it when the report lands.
+      uploadMetricsSidecar(path, items, results, segments, hub, orderDate, true, ronda);
+      startOutboxTimer();
+      statusEl.className='sum-upload-status queued';
+      statusEl.textContent='📶 Sin conexión — el reporte se enviará solo al reconectar';
+    }
+    finishBtn.textContent='Terminar armado';
+    finishBtn.onclick=()=>newOrder(outcome==='queued'); // queued → keep the partial
+    finishBtn.disabled=false;
   }
   attemptUpload();
 }
 
 /* ── CSV GENERATION ── */
-function generateCSV(items, results, hub, assembler='', fileSuffix=''){
+// opts.ronda===2 → round-2 register report (§3.5): only touched SKUs, plus the 3 cumulative-qty columns.
+function generateCSV(items, results, hub, assembler='', fileSuffix='', opts={}){
   const now=new Date();
-  const headers=['Hub','Armador','Fecha','Hora','Posición armado','Producto','Código en sistema','Código físico escaneado','Unidad','Solicitado','Inventario CH','Armado','Verificación código','Estado','Fecha vencimiento'];
+  const isR2=opts.ronda===2;
+  const r1Armado=opts.r1Armado||{};
+  if(isR2){ // keep only SKUs the assembler acted on this round
+    const keep=items.map((it,i)=>i).filter(i=>results[i]&&results[i].status!==ITEM_STATUS.PENDING);
+    items=keep.map(i=>items[i]); results=keep.map(i=>results[i]);
+  }
+  const headers=['Hub','Armador','Fecha','Hora','Posición armado','Producto','Código en sistema','Código físico escaneado','Unidad','Solicitado','Inventario CH','Armado','Verificación código','Estado','Vencimiento mínimo','Segundos en producto']
+    .concat(isR2?['Armado en la mañana','Armado complemento','Salida (kg/pz)']:[]);
   const rows=items.map((item,i)=>{
     const r=results[i];
     // Use the moment the item was confirmed; fall back to report-generation time for pending items
@@ -1395,15 +1752,25 @@ function generateCSV(items, results, hub, assembler='', fileSuffix=''){
     const pick=r.picked!==null?(unit==='Kg'?Number(r.picked).toFixed(2):Math.round(r.picked)):'';
     const sysBC=cleanBC(item['Código de barras']), physBC=r.scannedBC||(r.bcStatus===BC_STATUS.SCANNED?sysBC:'');
     const bcVerify={[BC_STATUS.SCANNED]:'Confirmado',[BC_STATUS.UNAVAIL]:'No disponible (ilegible)',[BC_STATUS.WRONGSYS]:'Discrepancia — código físico ≠ sistema',[BC_STATUS.NOSYS]:'Sin código en sistema',[BC_STATUS.PENDING]:'No escaneado'}[r.bcStatus]||'';
-    const estado={[ITEM_STATUS.COMPLETED]:'Completo',[ITEM_STATUS.PARTIAL]:'Parcial',[ITEM_STATUS.NOBC]:'Parcial (BC ilegible)',[ITEM_STATUS.WRONGSYS]:'Parcial (discrepancia de código)',[ITEM_STATUS.SKIPPED]:'Faltante',[ITEM_STATUS.PENDING]:'Pendiente'}[r.status]||'Pendiente';
+    const estado={[ITEM_STATUS.COMPLETED]:'Completo',[ITEM_STATUS.PARTIAL]:'Parcial',[ITEM_STATUS.NOBC]:'Parcial (BC ilegible)',[ITEM_STATUS.WRONGSYS]:'Parcial (discrepancia de código)',[ITEM_STATUS.SKIPPED]:'Faltante',[ITEM_STATUS.SHORTDATE]:'Faltante (fecha corta)',[ITEM_STATUS.PENDING]:'Pendiente'}[r.status]||'Pendiente';
     const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
-    const expOut=r.expDate==='N/A'?'Sin fecha de vencimiento':(r.expDate||'');
+    // Read-only: the computed minimum acceptable expiry that was displayed to the assembler (blank when no shelf-life columns)
+    const minExpOut=minExpDMY(computeMinExpDate(item));
     const invCH=String(item['Inventario hub saliente']||'').trim();
     // Per-item assembler: whoever confirmed this item; fall back to session assembler for pending rows
     const rowAssembler=r.assembler||assembler;
-    return [hub,rowAssembler,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,invCH,pick,bcVerify,estado,expOut];
+    const handleOut=typeof r.handleSec==='number'?r.handleSec:''; // raw data behind segMedianoPorSku; blank for pending
+    const base=[hub,rowAssembler,date,time,pos,item['Producto']||'',sysBC,physBC,unit,reqQ,invCH,pick,bcVerify,estado,minExpOut,handleOut];
+    if(!isR2) return base;
+    // Round-2 register columns — the system's Salida field is a cumulative total, typed by hand
+    const key=(sysBC||('norm:'+normName(item['Producto']||'')));
+    const manana=r1Armado[key]||0;
+    const comp=Number(r.picked)||0;
+    const totOut=unit==='Kg'?(manana+comp).toFixed(2):Math.round(manana+comp);
+    return base.concat([unit==='Kg'?Number(manana).toFixed(2):Math.round(manana), pick, totOut]);
   });
-  const csv=[headers,...rows].map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const banner=isR2?['# COMPLEMENTO — capturar "Salida (kg/pz)", ya incluye lo armado en la mañana']:[];
+  const csv=[...banner,headers,...rows].map(row=>Array.isArray(row)?row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(','):row).join('\r\n');
   const hubSlug=hub.replace(/\s+/g,'_');
   const dateISO=localDateStr(now);
   return { csv, filename:`${hubSlug}_${dateISO}${fileSuffix}.csv`, now };
@@ -1413,6 +1780,907 @@ function triggerDownload(csv, filename){
   const url=URL.createObjectURL(blob);
   Object.assign(document.createElement('a'),{href:url,download:filename}).click();
   URL.revokeObjectURL(url);
+}
+
+/* ── TIMING METRICS (§3.1 / §3.3) ──────────────────────────────────────────────
+   Derived from per-item confirmedAt/handleSec + per-session segments.
+   Facts, not forecasts: minutosReloj and minutosActivos are both reported and never merged.
+   Nothing is ever excluded — irregular assemblies are flagged, never dropped. */
+function _round1(n){ return Math.round((Number(n)||0)*10)/10; }
+function _median(arr){
+  if(!arr.length) return 0;
+  const s=[...arr].sort((a,b)=>a-b), m=s.length>>1;
+  return s.length%2 ? s[m] : Math.round((s[m-1]+s[m])/2);
+}
+function _toDate(v){ return v instanceof Date ? v : (v ? new Date(v) : null); }
+
+// segments: [{start:ISO, end:ISO|null, assembler}]  ·  opts: { orderDate, deferred }
+function computeOrderMetrics(items, results, segments, hub, opts={}){
+  const IDLE_MS=IDLE_GAP_MIN*60000, FLAG_MS=FLAG_GAP_MIN*60000;
+  const now=new Date();
+  const resolved=results.filter(r=>r&&r.status&&r.status!=='pending');
+  const actions=resolved.map(r=>_toDate(r.confirmedAt)).filter(Boolean).sort((a,b)=>a-b);
+
+  // Normalise segments; an unclosed segment is treated as ending now
+  const segs=(segments||[])
+    .map(s=>({start:_toDate(s.start), end:_toDate(s.end)||now, assembler:s.assembler||''}))
+    .filter(s=>s.start&&s.end&&s.end>s.start);
+
+  // Wall-clock = sum of segment durations (the overnight gap between segments is never counted).
+  // Active = wall-clock minus every INTER-ITEM gap longer than IDLE_GAP_MIN, measured within a segment.
+  let clockMs=0, idleMs=0, maxGapMs=0;
+  const perSegActiveMs={};
+  for(const s of segs){
+    const dur=s.end-s.start; clockMs+=dur;
+    const inSeg=actions.filter(t=>t>=s.start&&t<=s.end);
+    let segIdle=0;
+    for(let i=1;i<inSeg.length;i++){
+      const gap=inSeg[i]-inSeg[i-1];
+      if(gap>maxGapMs) maxGapMs=gap;
+      if(gap>IDLE_MS) segIdle+=gap;
+    }
+    idleMs+=segIdle;
+    const key=s.assembler||'—';
+    perSegActiveMs[key]=(perSegActiveMs[key]||0)+Math.max(0,dur-segIdle);
+  }
+  const minutosReloj=_round1(clockMs/60000);
+  const minutosActivos=_round1(Math.max(0,clockMs-idleMs)/60000);
+
+  const skusTotal=items.length;
+  const skusArmados=resolved.length;
+  const completos=results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
+  const parciales=results.filter(r=>[ITEM_STATUS.PARTIAL,ITEM_STATUS.NOBC,ITEM_STATUS.WRONGSYS].includes(r.status)).length;
+  const faltantes=results.filter(r=>r.status===ITEM_STATUS.SKIPPED).length;
+  const fechaCorta=results.filter(r=>r.status===ITEM_STATUS.SHORTDATE).length;
+  const pctCompleto=skusTotal?Math.round(completos/skusTotal*100):0; // share of the order assembled complete
+
+  const skusHrReloj=minutosReloj>0?_round1(skusArmados/(minutosReloj/60)):0;
+  const skusHrActivo=minutosActivos>0?_round1(skusArmados/(minutosActivos/60)):0;
+  const segMedianoPorSku=_median(resolved.map(r=>r.handleSec).filter(n=>typeof n==='number'));
+
+  // Per-assembler split, on the per-item assembler field
+  const byArm={};
+  for(const r of resolved){
+    const a=r.assembler||'—';
+    (byArm[a]=byArm[a]||{armador:a,skus:0});
+    byArm[a].skus++;
+  }
+  const porArmador=Object.values(byArm).map(o=>{
+    const minR=_round1((perSegActiveMs[o.armador]||0)/60000);
+    return { armador:o.armador, skus:o.skus, minutosActivos:minR, skusHr: minR>0?_round1(o.skus/(minR/60)):0 };
+  });
+
+  const armadores=[...new Set(resolved.map(r=>r.assembler).filter(Boolean))].sort();
+
+  // ── Flags — every assembly is kept; the irregular ones are marked so an odd number is explained ──
+  const flags=[];
+  const first=actions[0], last=actions[actions.length-1];
+  if(first&&last&&localDateStr(first)!==localDateStr(last)) flags.push('CRUZA_DIA');
+  if(segs.length>1) flags.push('MULTI_SESION');
+  if(maxGapMs>FLAG_MS) flags.push('PAUSA_LARGA');
+  if(armadores.length>1) flags.push('MULTI_ARMADOR');
+  if(skusTotal<FLAG_MIN_SKUS) flags.push('PEDIDO_CHICO');
+  if(results.some(r=>!r.status||r.status===ITEM_STATUS.PENDING)) flags.push('INCOMPLETO');
+  if(opts.deferred) flags.push('REPORTE_DIFERIDO');
+  if(!(minutosReloj>0)) flags.push('SIN_TIEMPO');
+
+  // ── §3.4 skip-behaviour + light-accuracy (from per-result fields set during the assembly) ──
+  const skipRows=results.filter(r=>SKIP_STATUSES.includes(r.status));
+  const luzAlSkip={verde:0,amarillo:0,rojo:0,sin_dato:0};
+  skipRows.forEach(r=>{ const k=r.luzAlSkip||'sin_dato'; luzAlSkip[k]=(luzAlSkip[k]||0)+1; });
+  const faltantesRapidos=skipRows.filter(r=>typeof r.handleSec==='number' && r.handleSec<MIN_SEARCH_SEC).length;
+  const faltantesDesmentidos=results.filter(r=>r._contradicted).length;
+  const pickedRows=results.filter(r=>Number(r.picked)>0);
+  const rojosEncontrados=pickedRows.filter(r=>r.luzAlSkip==='rojo').length;   // light said 🔴, they found it anyway
+  const rojosNoEncontrados=skipRows.filter(r=>r.luzAlSkip==='rojo').length;
+  const verdesNoEncontrados=skipRows.filter(r=>r.luzAlSkip==='verde').length; // consumption the app can't see
+
+  return {
+    v:2, hub, fecha:localDateStr(now), armadores, orderDate:opts.orderDate||'', ronda:opts.ronda||1,
+    skusTotal, skusArmados, minutosReloj, minutosActivos, skusHrReloj, skusHrActivo,
+    segMedianoPorSku, faltantes, fechaCorta, parciales, pctCompleto,
+    porArmador, flags, segments:(segments||[]),
+    luzAlSkip, faltantesRapidos, faltantesDesmentidos, rojosEncontrados, rojosNoEncontrados, verdesNoEncontrados,
+    generatedAt:now.toISOString()
+  };
+}
+
+// Sidecar next to the report: metrics/{hub-slug}/{same stem}.json — fire-and-forget, never blocks the UI
+function uploadMetricsSidecar(reportPath, items, results, segments, hub, orderDate, deferred=false, ronda=1){
+  try{
+    const m=computeOrderMetrics(items, results, segments, hub, {orderDate, deferred, ronda});
+    const mPath=reportPath.replace(/^reports\//,'metrics/').replace(/\.csv$/,'.json');
+    sbUpload(mPath, JSON.stringify(m), 'application/json').catch(e=>{
+      if(isNetErr(e)) outboxAdd({kind:'metrics', path:mPath, body:JSON.stringify(m), contentType:'application/json'});
+      else console.warn('metrics sidecar upload failed:',e);
+    });
+  }catch(e){ console.warn('metrics sidecar build failed:',e); }
+}
+
+/* ── COORDINATOR METRICS SCREEN (§3.2) — a table, not a dashboard ── */
+const METRICS_CACHE_KEY='calii_metrics_cache';
+let _metricsData=[];        // parsed sidecar payloads
+let _metricsRendered=[];    // current filtered+sorted view (what the CSV export mirrors)
+let _metricsSort={key:'fecha',dir:-1}; // default: Fecha desc
+
+// One entry drives the header, the row cells and the CSV column
+const METRIC_COLS=[
+  { key:'flags', label:'⚑',           kind:'flags' },
+  { key:'fecha', label:'Fecha',       kind:'str',  get:m=>m.fecha||'' },
+  { key:'hub',   label:'Hub',         kind:'str',  get:m=>m.hub||'' },
+  { key:'arm',   label:'Armador(es)', kind:'str',  get:m=>(m.armadores||[]).join(', ')||'—' },
+  { key:'skus',  label:'SKUs',        kind:'num',  get:m=>m.skusArmados||0 },
+  { key:'reloj', label:'Min reloj',   kind:'num',  get:m=>m.minutosReloj||0 },
+  { key:'activo',label:'Min activos', kind:'num',  get:m=>m.minutosActivos||0 },
+  { key:'shr',   label:'SKUs/hr',     kind:'num',  get:m=>m.skusHrReloj||0 },
+  { key:'falt',  label:'Faltantes',   kind:'num',  get:m=>m.faltantes||0 },
+  { key:'corta', label:'Fecha corta', kind:'num',  get:m=>m.fechaCorta||0 },
+  { key:'pct',   label:'% completo',  kind:'num',  get:m=>m.pctCompleto||0, suffix:'%' },
+  { key:'seg',   label:'Seg/SKU',     kind:'num',  get:m=>m.segMedianoPorSku||0 }
+];
+
+function openMetrics(){ showScreen('metrics'); loadMetrics(false); }
+
+async function loadMetrics(force){
+  const statusEl=document.getElementById('metrics-status');
+  const tbl=document.getElementById('metrics-table');
+  statusEl.textContent='Cargando métricas…'; tbl.innerHTML='';
+
+  let cache={};
+  if(!force){ try{ cache=JSON.parse(localStorage.getItem(METRICS_CACHE_KEY)||'{}')||{}; }catch(_){ cache={}; } }
+
+  const lists=await Promise.all(HUBS.map(async hub=>{
+    try{
+      const files=await sbList(`metrics/${HUB_SLUG[hub]}/`);
+      return files.filter(f=>f.name&&f.name.endsWith('.json')).map(f=>`metrics/${HUB_SLUG[hub]}/${f.name}`);
+    }catch(_){ return []; }
+  }));
+  const paths=[...new Set(lists.flat())];
+  const toFetch=paths.filter(p=>!cache[p]);
+  // Metrics files are immutable — only fetch paths not already cached, in parallel batches of 8
+  for(let i=0;i<toFetch.length;i+=8){
+    const res=await Promise.all(toFetch.slice(i,i+8).map(async p=>{
+      try{ return [p, JSON.parse(await sbFetch(p))]; }catch(_){ return null; }
+    }));
+    for(const r of res){ if(r&&r[1]&&r[1].v) cache[r[0]]=r[1]; }
+  }
+  // Persist cache pruned to files that still exist
+  const fresh={};
+  for(const p of paths){ if(cache[p]) fresh[p]=cache[p]; }
+  try{ localStorage.setItem(METRICS_CACHE_KEY, JSON.stringify(fresh)); }catch(_){}
+
+  _metricsData=paths.map(p=>cache[p]).filter(m=>m&&m.v).map(m=>({...m}));
+
+  // Fill filter dropdowns, preserving any current selection that still exists
+  const armSel=document.getElementById('mf-armador'), hubSel=document.getElementById('mf-hub');
+  const curArm=armSel.value, curHub=hubSel.value;
+  const allArm=[...new Set(_metricsData.flatMap(m=>m.armadores||[]))].sort();
+  const allHub=[...new Set(_metricsData.map(m=>m.hub).filter(Boolean))].sort();
+  armSel.innerHTML='<option value="">Todos los armadores</option>'+allArm.map(a=>`<option value="${escH(a)}">${escH(a)}</option>`).join('');
+  hubSel.innerHTML='<option value="">Todos los hubs</option>'+allHub.map(h=>`<option value="${escH(h)}">${escH(h)}</option>`).join('');
+  if(allArm.includes(curArm)) armSel.value=curArm;
+  if(allHub.includes(curHub)) hubSel.value=curHub;
+
+  statusEl.textContent='';
+  renderMetrics();
+}
+
+function metricsSort(key){
+  if(_metricsSort.key===key) _metricsSort.dir*=-1;
+  else _metricsSort={key, dir:-1};
+  renderMetrics();
+}
+
+function _metricFilteredSorted(){
+  const arm=document.getElementById('mf-armador').value;
+  const hub=document.getElementById('mf-hub').value;
+  const per=parseInt(document.getElementById('mf-periodo').value)||0;
+  const onlyIrr=document.getElementById('mf-irregulares').checked;
+
+  let rows=_metricsData.slice();
+  if(arm) rows=rows.filter(m=>(m.armadores||[]).includes(arm));
+  if(hub) rows=rows.filter(m=>m.hub===hub);
+  if(per>0){
+    const cut=new Date(); cut.setDate(cut.getDate()-per);
+    const cutStr=localDateStr(cut);
+    rows=rows.filter(m=>(m.fecha||'')>=cutStr);
+  }
+  // "Solo irregulares" narrows to flagged rows — it never hides them from the default (unchecked) view
+  if(onlyIrr) rows=rows.filter(m=>(m.flags||[]).length>0);
+
+  const col=METRIC_COLS.find(c=>c.key===_metricsSort.key)||METRIC_COLS[1];
+  const dir=_metricsSort.dir;
+  rows.sort((a,b)=>{
+    if(col.kind==='flags') return ((a.flags||[]).length-(b.flags||[]).length)*dir;
+    let va=col.get(a), vb=col.get(b);
+    if(col.kind==='str'){ va=String(va).toLowerCase(); vb=String(vb).toLowerCase(); return va<vb?-dir:va>vb?dir:0; }
+    return (va-vb)*dir;
+  });
+  return rows;
+}
+
+function renderMetrics(){
+  const tbl=document.getElementById('metrics-table');
+  if(!_metricsData.length){
+    _metricsRendered=[];
+    tbl.innerHTML=`<tbody><tr><td class="metrics-empty">Sin métricas todavía. Se crean al terminar cada armado.</td></tr></tbody>`;
+    return;
+  }
+  const rows=_metricFilteredSorted();
+  _metricsRendered=rows;
+
+  const thead='<thead><tr>'+METRIC_COLS.map(c=>{
+    const ind=c.key===_metricsSort.key?`<span class="sort-ind">${_metricsSort.dir<0?'▾':'▴'}</span>`:'';
+    return `<th onclick="metricsSort('${c.key}')">${c.label}${ind}</th>`;
+  }).join('')+'</tr></thead>';
+
+  const tbody='<tbody>'+(rows.length?rows.map(m=>{
+    const fl=(m.flags||[]).slice().sort((a,b)=>FLAG_ORDER.indexOf(a)-FLAG_ORDER.indexOf(b));
+    const irr=fl.length>0;
+    const cells=METRIC_COLS.map(c=>{
+      if(c.kind==='flags'){
+        const icons=fl.map(f=>FLAG_META[f]?FLAG_META[f].icon:'').join('');
+        const tip=fl.map(f=>FLAG_META[f]?FLAG_META[f].txt:f).join(' · ');
+        return `<td class="flag-cell" title="${escH(tip)}">${icons}</td>`;
+      }
+      let v=c.get(m);
+      if(c.kind==='num'){ v=_round1(v); return `<td>${escH(String(v))}${c.suffix||''}</td>`; }
+      return `<td>${escH(String(v))}</td>`;
+    }).join('');
+    return `<tr class="${irr?'irregular':''}">${cells}</tr>`;
+  }).join(''):`<tr><td class="metrics-empty" colspan="${METRIC_COLS.length}">Ningún armado coincide con los filtros.</td></tr>`)+'</tbody>';
+
+  // Footer — weighted rate (total SKUs ÷ total hours), ignoring SIN_TIEMPO rows (div-by-zero)
+  const agg=rows.filter(m=>!(m.flags||[]).includes('SIN_TIEMPO'));
+  const excluded=rows.length-agg.length;
+  const totSkus=agg.reduce((s,m)=>s+(m.skusArmados||0),0);
+  const totReloj=agg.reduce((s,m)=>s+(m.minutosReloj||0),0);
+  const totActivo=agg.reduce((s,m)=>s+(m.minutosActivos||0),0);
+  const wRate=totReloj>0?_round1(totSkus/(totReloj/60)):0;
+  const note=excluded>0?`⛔ ${excluded} armado${excluded>1?'s':''} sin tiempo — excluido${excluded>1?'s':''} de los totales`:'';
+  const tfoot=rows.length?`<tfoot>
+    <tr><td colspan="4">Totales · ${agg.length} armado${agg.length!==1?'s':''}</td>
+      <td>${totSkus}</td><td>${_round1(totReloj)}</td><td>${_round1(totActivo)}</td><td>${wRate}</td>
+      <td colspan="4"></td></tr>
+    ${note?`<tr><td colspan="${METRIC_COLS.length}" class="metrics-foot-note">${note}</td></tr>`:''}
+  </tfoot>`:'';
+
+  tbl.innerHTML=thead+tbody+tfoot;
+}
+
+function downloadMetricsCSV(){
+  const rows=_metricsRendered||[];
+  const headers=['Fecha','Hub','Armadores','SKUs','Min reloj','Min activos','SKUs/hr','Faltantes','Fecha corta','% completo','Seg/SKU',
+    'F. rápidos','F. desmentidos','Rojos encontrados','Rojos no encontrados','Verdes no encontrados','Flags','Regular'];
+  const body=rows.map(m=>{
+    const fl=(m.flags||[]).slice().sort((a,b)=>FLAG_ORDER.indexOf(a)-FLAG_ORDER.indexOf(b));
+    return [
+      m.fecha||'', m.hub||'', (m.armadores||[]).join(', '),
+      m.skusArmados||0, _round1(m.minutosReloj||0), _round1(m.minutosActivos||0), _round1(m.skusHrReloj||0),
+      m.faltantes||0, m.fechaCorta||0, m.pctCompleto||0, m.segMedianoPorSku||0,
+      m.faltantesRapidos||0, m.faltantesDesmentidos||0, m.rojosEncontrados||0, m.rojosNoEncontrados||0, m.verdesNoEncontrados||0,
+      fl.join(';'), fl.length?'No':'Sí'
+    ];
+  });
+  const csv=[headers,...body].map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  triggerDownload(csv, `metricas_armado_${todayStr()}.csv`);
+}
+
+/* ── INVENTORY SEMÁFORO (§3.4) ────────────────────────────────────────────────
+   The light reports what has actually been picked today — it never forecasts and
+   never allocates. Red is arithmetic only (scanned + confirmed units); testimony
+   ("no se encontró") tops out at yellow. Missing/unreachable picks → no lights,
+   assembly runs exactly as v1. ── */
+function itemUnit(item){ return item['Kg/Pz']||'Pz'; }
+function skuKeyOf(item){
+  const bc=cleanBC(item['Código de barras']);
+  return bc || ('norm:'+normName(item['Producto']||''));
+}
+function itemInventario(item){
+  const raw=String(item['Inventario hub saliente']||'').trim();
+  if(raw==='') return null;
+  const n=Number(raw);
+  return isNaN(n)?null:n;
+}
+function itemSolicitado(item){
+  const q=parseFloat(item['Solicitud (kg/pz)'])||0;
+  return itemUnit(item)==='Kg'?q:Math.ceil(q);
+}
+
+const PICK_SELECT='id,hub,sku_key,unidad,cantidad,senal,armador,ts';
+
+async function loadPicks(){
+  S._picks=[]; S._picksMaxTs='';
+  try{
+    const rows=await pgSelect('picks', `fecha=eq.${todayStr()}&ronda=eq.${S.ronda}&order=ts.asc&select=${PICK_SELECT}`);
+    S._picks=rows;
+    S._picksMaxTs=rows.length?rows[rows.length-1].ts:'';
+    S._picksReachable=true;
+  }catch(e){
+    S._picksReachable=false;
+    console.warn('semáforo: picks inalcanzable — sin luces:', e.message);
+  }
+  recomputeLights();
+}
+async function pollPicks(){
+  if(!S._picksReachable){ await loadPicks(); if(!S._picksReachable){ return; } updateLightChips(); return; }
+  try{
+    const q = S._picksMaxTs
+      ? `fecha=eq.${todayStr()}&ronda=eq.${S.ronda}&ts=gte.${encodeURIComponent(S._picksMaxTs)}&order=ts.asc&select=${PICK_SELECT}`
+      : `fecha=eq.${todayStr()}&ronda=eq.${S.ronda}&order=ts.asc&select=${PICK_SELECT}`;
+    const rows=await pgSelect('picks', q);
+    if(rows.length){
+      const seen=new Set(S._picks.map(p=>p.id));
+      for(const row of rows){ if(!seen.has(row.id)){ S._picks.push(row); seen.add(row.id); } }
+      if(S._picks.length) S._picksMaxTs=S._picks[S._picks.length-1].ts;
+    }
+  }catch(e){ return; } // transient — keep last known lights
+  recomputeLights();
+  updateLightChips();
+}
+function startPicksPoll(){
+  stopPicksPoll();
+  S._pollTimer=setInterval(()=>{
+    if(document.getElementById('screen-list').classList.contains('active')) pollPicks();
+  }, POLL_MS);
+}
+function stopPicksPoll(){ if(S._pollTimer){ clearInterval(S._pollTimer); S._pollTimer=null; } }
+
+// Rebuild S._lights (per item index) and S._contradicted from the picks buffer
+function recomputeLights(){
+  S._lights={}; S._contradicted={};
+  S.results.forEach(r=>{ if(r) r._contradicted=false; });
+  if(!S._picksReachable || !S.items.length) return;
+
+  const myHub=S.hub;
+  const byKey={};
+  for(const p of S._picks){
+    const k=p.sku_key; if(!k) continue;
+    const b=byKey[k]||(byKey[k]={cons:{}, noEnc:new Set(), pos:new Set(), lastConsTs:0});
+    const qty=Number(p.cantidad)||0;
+    if(p.hub!==myHub){ // "consumido por otros hubs" — my own hub's picks are me
+      const u=(p.unidad||'').trim(); // '' bucket = unit not recorded; counts toward any item's unit
+      b.cons[u]=(b.cons[u]||0)+qty;
+      if(qty>0){ const t=Date.parse(p.ts)||0; if(t>b.lastConsTs) b.lastConsTs=t; }
+    }
+    if(p.senal==='no_encontrado' && p.armador) b.noEnc.add(p.armador);
+    if(qty>0 && p.armador) b.pos.add(p.armador);
+  }
+
+  S.items.forEach((item,i)=>{
+    const inv=itemInventario(item);
+    if(inv==null) return; // no inventory column for this SKU → no light, ever
+    const key=skuKeyOf(item);
+    const b=byKey[key]||{cons:{}, noEnc:new Set(), pos:new Set(), lastConsTs:0};
+    const r=S.results[i];
+
+    // Contradiction: I marked "no se encontró" and another assembler has a real pick on the same SKU today
+    if(r && r.status===ITEM_STATUS.SKIPPED && r._senal==='no_encontrado'){
+      if([...b.pos].some(a=>a!==S.assembler)){ S._contradicted[i]=true; r._contradicted=true; }
+    }
+
+    const unit=itemUnit(item);
+    const knownUnits=Object.keys(b.cons).filter(u=>u!==''); // units actually recorded on picks
+    if(knownUnits.length && !knownUnits.includes(unit)){
+      console.warn('semáforo: unidad distinta para', key, knownUnits, '≠', unit, '— sin luz');
+      return; // never convert Kg↔Pz
+    }
+    const consumido=(b.cons[unit]||0)+(b.cons['']||0); // matching unit + unit-not-recorded rows
+    const disponible=inv-consumido;
+    const solicitado=itemSolicitado(item);
+    const noEnc=b.noEnc.size;
+    const nameJoin=key.startsWith('norm:'); // name-matched SKUs may raise 🟡, never 🔴
+    const hora=b.lastConsTs ? new Date(b.lastConsTs).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '';
+
+    // The light reflects what OTHER hubs have done today. No consumption and no testimony → green,
+    // whatever the stock level (a zero-inventory SKU is the assembler's normal Faltante flow, not contention).
+    if(consumido<=0 && noEnc<FLAG_NOTFOUND_MIN){
+      S._lights[i]={ color:'verde', basis:'aritmetica', inventario:inv, consumido:0, disponible:inv, solicitado, noEnc, hora:'' };
+      return;
+    }
+
+    let color, basis='aritmetica';
+    if(disponible<=0)               color = nameJoin ? 'amarillo' : 'rojo';
+    else if(disponible<solicitado)  color = 'amarillo';
+    else if(noEnc>=FLAG_NOTFOUND_MIN){ color='amarillo'; basis='testimonio'; }
+    else                            color = 'verde';
+
+    S._lights[i]={ color, basis, inventario:inv, consumido, disponible, solicitado, noEnc, hora };
+  });
+}
+
+// The light shown for item i, only while it is still pending (a resolved row shows its status icon instead)
+function activeLight(i){
+  const r=S.results[i];
+  if(!r || r.status!==ITEM_STATUS.PENDING) return null;
+  const lt=S._lights[i];
+  return (lt && lt.color!=='verde') ? lt : null;
+}
+
+// One row per confirm / faltante. Fire-and-forget (Phase 6 will route this through the outbox).
+function recordPick(idx){
+  const item=S.items[idx], r=S.results[idx];
+  if(!item||!r) return;
+  const senal = r.status===ITEM_STATUS.SHORTDATE ? 'fecha_corta'
+              : r.status===ITEM_STATUS.SKIPPED   ? 'no_encontrado' : null;
+  r._senal=senal;
+  const row={
+    fecha:todayStr(), hub:S.hub, ronda:S.ronda,
+    sku_key:skuKeyOf(item), producto:item['Producto']||'', unidad:itemUnit(item),
+    cantidad:Number(r.picked)||0, senal,
+    luz:r.luzAlSkip||'sin_dato',
+    seg_busqueda:(typeof r.handleSec==='number')?r.handleSec:null,
+    armador:S.assembler||null, order_date:S.orderDate||null
+  };
+  pgInsert('picks', row).catch(e=>{
+    if(isNetErr(e)){ outboxAdd({kind:'pick', body:JSON.stringify(row)}); startOutboxTimer(); }
+    else console.warn('pick insert failed:', e);
+  });
+}
+
+// Poll-safe row updates — never touches an open panel, never re-partitions the list
+function updateLightChips(){
+  S.items.forEach((item,i)=>{
+    if(_expandedIdx===i) return;
+    const row=document.getElementById(`item-row-${i}`);
+    const meta=row&&row.querySelector('.row-meta');
+    if(!meta) return;
+    const lt=activeLight(i);
+    let chip=meta.querySelector('.light-chip');
+    if(lt){
+      const txt=lt.color==='rojo'?'🔴':'🟡', cls=`light-chip light-${lt.color}`;
+      if(chip){ chip.className=cls; chip.textContent=txt; }
+      else { chip=document.createElement('span'); chip.className=cls; chip.textContent=txt; meta.appendChild(chip); }
+    } else if(chip){ chip.remove(); }
+    if(S._contradicted[i] && !meta.querySelector('.revisar-chip')){
+      const rc=document.createElement('span'); rc.className='revisar-chip'; rc.textContent='🔁'; meta.appendChild(rc);
+    }
+  });
+  updateRevisarHeaderChip();
+}
+function updateRevisarHeaderChip(){
+  const el=document.getElementById('revisar-hdr-chip');
+  if(!el) return;
+  const n=Object.keys(S._contradicted).filter(k=>S._contradicted[k]).length;
+  if(n>0){ el.style.display=''; el.textContent=`🔁 ${n}`; } else el.style.display='none';
+}
+let _revisarOpen=false;
+function toggleRevisar(){
+  _revisarOpen=!_revisarOpen;
+  const bodyEl=document.getElementById('revisar-body'), caret=document.getElementById('revisar-caret');
+  if(bodyEl) bodyEl.style.display=_revisarOpen?'block':'none';
+  if(caret) caret.textContent=_revisarOpen?'▾':'▸';
+}
+function scrollToRevisar(){
+  const sec=document.getElementById('revisar-section');
+  if(!sec) return;
+  if(!_revisarOpen) toggleRevisar();
+  sec.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+/* ── COORDINATOR: inventory conflicts + faltantes — hoy (§3.4) ── */
+let _invTodayOpen=false;
+function toggleInvToday(){
+  _invTodayOpen=!_invTodayOpen;
+  const body=document.getElementById('invtoday-body');
+  const btn=document.getElementById('invtoday-toggle');
+  body.style.display=_invTodayOpen?'block':'none';
+  btn.textContent=_invTodayOpen?'⚠️ Ocultar conflictos y faltantes' : '⚠️ Ver conflictos y faltantes de hoy';
+  if(_invTodayOpen) loadInvToday();
+}
+async function loadInvToday(){
+  const body=document.getElementById('invtoday-body');
+  body.innerHTML='<div class="coord-empty">Cargando…</div>';
+
+  // 1. Every hub's current order → demand per SKU (aggregated within unit, latest inventory value wins)
+  const perHubOrders=await Promise.all(HUBS.map(async hub=>{
+    try{
+      const files=(await sbList(`orders/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name));
+      if(!files.length) return {hub, rows:[], date:''};
+      const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${files[0].name}`);
+      const parsed=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
+      const rows=parsed.data.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
+      return {hub, rows, date:files[0].name.replace('.csv','')};
+    }catch(_){ return {hub, rows:[], date:''}; }
+  }));
+
+  const sku={}; // key -> { producto, unit, inv, byHub:{hub:qty}, invDate }
+  perHubOrders.forEach(({hub,rows,date})=>{
+    rows.forEach(item=>{
+      const key=skuKeyOf(item), unit=itemUnit(item);
+      const s=sku[key]||(sku[key]={producto:item['Producto']||key, unit, inv:null, byHub:{}, invDate:''});
+      if(s.unit!==unit) return; // mixed units for one SKU → skip the check (never convert)
+      const inv=itemInventario(item);
+      if(inv!=null && (s.inv==null || date>s.invDate)){ s.inv=inv; s.invDate=date; }
+      s.byHub[hub]=(s.byHub[hub]||0)+itemSolicitado(item);
+    });
+  });
+
+  const conflicts=Object.values(sku).map(s=>{
+    const pedido=Object.values(s.byHub).reduce((a,b)=>a+b,0);
+    const hubs=Object.keys(s.byHub).length;
+    return {...s, pedido, hubs, faltan: (s.inv!=null? pedido-s.inv : null)};
+  }).filter(s=>s.inv!=null && s.faltan>0).sort((a,b)=>b.faltan-a.faltan);
+
+  // 2. Today's faltantes from the picks table
+  let faltRows=[];
+  try{
+    faltRows=await pgSelect('picks', `fecha=eq.${todayStr()}&senal=not.is.null&select=hub,sku_key,producto,unidad,cantidad,senal,armador`);
+  }catch(_){ faltRows=null; }
+  let positives=[];
+  try{
+    positives=await pgSelect('picks', `fecha=eq.${todayStr()}&cantidad=gt.0&select=sku_key,armador,hub`);
+  }catch(_){ positives=[]; }
+  const positiveByKey={};
+  (positives||[]).forEach(p=>{ (positiveByKey[p.sku_key]=positiveByKey[p.sku_key]||new Set()).add(p.armador+'|'+p.hub); });
+
+  let faltHtml;
+  if(faltRows===null){
+    faltHtml='<div class="coord-empty">Tabla de picks inalcanzable — sin faltantes en vivo.</div>';
+  } else if(!faltRows.length){
+    faltHtml='<div class="coord-empty">Sin faltantes registrados hoy.</div>';
+  } else {
+    const agg={};
+    faltRows.forEach(p=>{
+      const a=agg[p.sku_key]||(agg[p.sku_key]={producto:p.producto||p.sku_key, hubs:new Set(), noEnc:0, fechaCorta:0, desmentido:false});
+      a.hubs.add(p.hub);
+      if(p.senal==='fecha_corta') a.fechaCorta++; else a.noEnc++;
+      const others=[...(positiveByKey[p.sku_key]||[])].filter(x=>!x.startsWith((p.armador||'')+'|'));
+      if(p.senal==='no_encontrado' && others.length) a.desmentido=true;
+    });
+    faltHtml=Object.values(agg).sort((a,b)=>b.hubs.size-a.hubs.size).map(a=>{
+      const reasons=[a.noEnc?`${a.noEnc} no encontrado`:'', a.fechaCorta?`${a.fechaCorta} fecha corta`:''].filter(Boolean).join(', ');
+      return `<div class="invrow"><b>${escH(a.producto)}</b><span>${a.hubs.size} hub${a.hubs.size>1?'s':''} · ${escH(reasons)}${a.desmentido?' · <span style="color:var(--red)">1+ desmentido</span>':''}</span></div>`;
+    }).join('');
+  }
+
+  const confHtml = conflicts.length
+    ? conflicts.map(s=>`<div class="invrow"><b>${escH(s.producto)}</b><span>Inv ${s.inv} · pedido ${s.pedido} en ${s.hubs} hub${s.hubs>1?'s':''} · <span style="color:var(--red)">faltan ${_round1(s.faltan)}</span></span></div>`).join('')
+    : '<div class="coord-empty">Ningún SKU con demanda mayor al inventario.</div>';
+
+  body.innerHTML=`
+    <div class="invsub-title">⚠️ Conflictos de inventario — hoy</div>${confHtml}
+    <div class="invsub-title" style="margin-top:16px">📭 Faltantes de hoy</div>${faltHtml}`;
+}
+
+/* ── RESERVA + CIERRE — round-2 cross-check (§3.5) · read-only: it reports, it generates nothing ── */
+
+// The reserva (never shown to assemblers) is the whole point of the measurement.
+async function downloadNoSurtido(hub, orderDate){
+  try{
+    const pc=JSON.parse(await sbFetch(`pedido_completo/${HUB_SLUG[hub]}/${orderDate}.json`));
+    const reserva=(pc.rows||[]).filter(r=>!((parseFloat(r['Inventario hub saliente'])||0)>0));
+    if(!reserva.length){ toast('Este pedido no tiene SKUs en reserva'); return; }
+    const csv=Papa.unparse({fields:pc.fields&&pc.fields.length?pc.fields:Object.keys(reserva[0]), data:reserva});
+    triggerDownload(csv, `no_surtido_${hub.replace(/\s+/g,'_')}_${orderDate}.csv`);
+    toast(`✓ ${reserva.length} SKUs no surtidos`);
+  }catch(e){
+    toast('❌ No hay pedido completo guardado (súbelo de nuevo)');
+  }
+}
+
+// Parse a timestamp, treating a tz-less "YYYY-MM-DD HH:MM[:SS]" as Mexico CST (UTC-6, no DST).
+// pedido_completo.uploadedAt is a real toISOString() (has Z) and is trusted as-is.
+function parseMxTs(s){
+  if(!s) return NaN;
+  s=String(s).trim();
+  if(/[Zz]$|[+-]\d{2}:?\d{2}$/.test(s)) return Date.parse(s);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if(m) return Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]+6,+m[5],+m[6]||0);
+  return Date.parse(s);
+}
+
+const CIERRE_UNIT_COL='Kg / Pz'; // inventory export uses spaces; order CSV uses "Kg/Pz"
+function cierreReduce(text){
+  const p=Papa.parse(text,{header:true,dynamicTyping:false,skipEmptyLines:true});
+  const rows=p.data.map(r=>({
+    bc: cleanBC(r['Código de barras']),
+    nk: 'norm:'+normName(r['Producto']||''),
+    producto: r['Producto']||'',
+    unidad: (r[CIERRE_UNIT_COL]||r['Kg/Pz']||'').trim(),
+    final: parseFloat(r['Final [AUTO]']),
+    recepcion: parseFloat(r['Recepción'])||0,
+    recepcionTs: (r['Actualización recepción']||'').trim()
+  })).filter(r=>!isNaN(r.final));
+  return rows;
+}
+function cierreIndex(rows){
+  const byBc={}, byName={}, dupeBc={};
+  for(const r of rows){
+    if(r.bc){ if(byBc[r.bc]) dupeBc[r.bc]=true; else byBc[r.bc]=r; }
+    if(r.nk && !byName[r.nk]) byName[r.nk]=r;
+  }
+  for(const k in dupeBc) delete byBc[k]; // ambiguous barcode → fall back to name
+  return {byBc, byName};
+}
+function cierreLookup(idx, orderRow){
+  const bc=cleanBC(orderRow['Código de barras']);
+  if(bc && idx.byBc[bc]) return {...idx.byBc[bc], matched:'bc'};
+  const nk='norm:'+normName(orderRow['Producto']||'');
+  if(idx.byName[nk]) return {...idx.byName[nk], matched:'nombre'};
+  return {matched:null};
+}
+
+async function uploadCierre(input){
+  const file=input.files[0]; if(!file) return;
+  input.value='';
+  const st=document.getElementById('cierre-status');
+  st.textContent='Procesando…';
+  try{
+    const text=await file.text();
+    const rows=cierreReduce(text);
+    if(!rows.length) throw new Error('sin filas válidas (falta la columna "Final [AUTO]"?)');
+    const od=todayStr();
+    await sbUpload(`inventario_cierre/${od}.json`,
+      JSON.stringify({uploadedAt:new Date().toISOString(), count:rows.length, rows}), 'application/json');
+    _cierreCache=null;
+    st.textContent=`✓ ${rows.length} SKUs · ${new Date().toLocaleString('es-MX',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`;
+    toast(`✓ Inventario de cierre cargado (${rows.length} SKUs)`);
+  }catch(e){
+    st.textContent='Error';
+    toast('❌ '+e.message);
+  }
+}
+
+let _cierreCache=null;
+async function loadCierre(){
+  if(_cierreCache) return _cierreCache;
+  try{
+    const files=(await sbList('inventario_cierre/')).filter(f=>f.name&&f.name.endsWith('.json')).sort((a,b)=>b.name.localeCompare(a.name));
+    if(!files.length) return null;
+    const data=JSON.parse(await sbFetch(`inventario_cierre/${files[0].name}`));
+    _cierreCache={ uploadedAt:data.uploadedAt, fecha:files[0].name.replace('.json',''), rows:data.rows||[], idx:cierreIndex(data.rows||[]) };
+    return _cierreCache;
+  }catch(e){ return null; }
+}
+async function refreshCierreStatus(){
+  const st=document.getElementById('cierre-status'); if(!st) return;
+  const c=await loadCierre();
+  st.textContent = c ? `Último: ${c.fecha} (${c.rows.length} SKUs)` : 'Sin cargar';
+}
+
+async function loadPedidoCompleto(hub){
+  try{
+    const files=(await sbList(`pedido_completo/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.json')).sort((a,b)=>b.name.localeCompare(a.name));
+    if(!files.length) return null;
+    return JSON.parse(await sbFetch(`pedido_completo/${HUB_SLUG[hub]}/${files[0].name}`));
+  }catch(e){ return null; }
+}
+// key -> qty assembled so far, from the latest round-1 report for this hub+date
+// key -> qty assembled so far for this hub+date. includeR2:false = morning only ("Armado en la mañana");
+// includeR2:true = R1 + R2 total ("armado hasta ahora"), so the cierre cross-check drops filled SKUs.
+async function armadoMapForHub(hub, orderDate, opts={}){
+  try{
+    const all=(await sbList(`reports/${HUB_SLUG[hub]}/`))
+      .filter(f=>f.name&&f.name.endsWith('.csv')&&f.name.startsWith(orderDate));
+    const r1=all.filter(f=>!/_r2_/.test(f.name)).sort((a,b)=>b.name.localeCompare(a.name));
+    const r2=opts.includeR2 ? all.filter(f=>/_r2_/.test(f.name)) : [];
+    const use=[...(r1.length?[r1[0]]:[]), ...r2];
+    if(!use.length) return {map:{}, hasReport:false};
+    const map={};
+    for(const f of use){
+      const p=Papa.parse(await sbFetch(`reports/${HUB_SLUG[hub]}/${f.name}`),{header:true,dynamicTyping:false,skipEmptyLines:true});
+      for(const row of p.data){
+        const key=cleanBC(row['Código en sistema'])||('norm:'+normName(row['Producto']||''));
+        map[key]=(map[key]||0)+(parseFloat(row['Armado'])||0);
+      }
+    }
+    return {map, hasReport:r1.length>0, reportName:r1[0]&&r1[0].name};
+  }catch(e){ return {map:{}, hasReport:false}; }
+}
+// SKU keys already emitted into a generated complemento (so Revisar is idempotent before assembly)
+async function generatedR2Keys(hub, orderDate){
+  try{
+    const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${orderDate}-r2.csv`);
+    const p=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
+    const s=new Set();
+    for(const row of p.data){ s.add(cleanBC(row['Código de barras'])||('norm:'+normName(row['Producto']||''))); }
+    return s;
+  }catch(e){ return new Set(); }
+}
+
+async function revisarCierre(){
+  const out=document.getElementById('cierre-result');
+  out.innerHTML='<div class="coord-empty">Revisando…</div>';
+  const cierre=await loadCierre();
+  if(!cierre){ out.innerHTML='<div class="coord-empty">Primero sube el registro de inventario.</div>'; return; }
+  const cierreTs=Date.parse(cierre.uploadedAt)||0;
+
+  const perHub=await Promise.all(HUBS.map(async hub=>{
+    const pc=await loadPedidoCompleto(hub);
+    if(!pc||!pc.rows||!pc.rows.length) return {hub, orderDate:null, reservaTotal:0, candidates:[], noMatch:[], hasReport:true, canGenerate:false};
+    const [{map:armado, hasReport}, alreadyGen, partials]=await Promise.all([
+      armadoMapForHub(hub, pc.orderDate, {includeR2:true}),
+      generatedR2Keys(hub, pc.orderDate),
+      sbList(`partials/${HUB_SLUG[hub]}/`).catch(()=>[])
+    ]);
+    const r1Open=(partials||[]).some(f=>f.name===`${pc.orderDate}.json`); // round 1 not finished
+    const orderUp=parseMxTs(pc.uploadedAt)||0;
+    let reservaTotal=0;
+    const candidates=[], noMatch=[];
+    for(const row of pc.rows){
+      const unit=(row['Kg/Pz']||'Pz').trim();
+      const solicitado=itemSolicitado(row);
+      const wasReserva=!((parseFloat(row['Inventario hub saliente'])||0)>0);
+      if(wasReserva) reservaTotal++;
+      const key=cleanBC(row['Código de barras'])||('norm:'+normName(row['Producto']||''));
+      if(alreadyGen.has(key)) continue; // idempotent: already in the generated complemento
+      const arm=armado[key]||0;
+      const pendiente=solicitado-arm;
+      if(pendiente<=0) continue; // fully assembled → not a candidate
+      const inv=cierreLookup(cierre.idx, row);
+      const origin=wasReserva?'reserva':(arm>0?'parcial':'faltante');
+      if(!inv.matched){
+        noMatch.push({producto:row['Producto']||key, pendiente, origin, pos:row['Posición armado']||''});
+        continue; // reported, never assumed to have (or lack) stock
+      }
+      if(inv.unidad && unit && inv.unidad.replace(/\s/g,'')!==unit.replace(/\s/g,'')) continue; // unit mismatch → never convert
+      // Class A: was reserva (row never shown), Final [AUTO] > 0 now — safe to test on the level.
+      // Class B: was an activo still short, and an actual reception landed AFTER the order download.
+      let clase=null;
+      if(wasReserva){
+        if(inv.final>0) clase='A reserva';
+      } else {
+        const recTs=parseMxTs(inv.recepcionTs);
+        if(inv.recepcion>0 && !isNaN(recTs) && recTs>orderUp) clase='B recepción';
+      }
+      if(!clase) continue;
+      candidates.push({
+        producto:row['Producto']||key, pendiente, clase, origin, srcRow:row,
+        pos:row['Posición armado']||'', final:inv.final, recepcion:inv.recepcion, recepcionTs:inv.recepcionTs
+      });
+    }
+    return {hub, orderDate:pc.orderDate, reservaTotal, candidates, noMatch, hasReport,
+      r1Open, canGenerate:!r1Open&&candidates.length>0, fields:pc.fields||[]};
+  }));
+
+  _cierrePerHub=perHub;
+  renderCierreResult(perHub, cierre);
+}
+let _cierrePerHub=[];
+
+function renderCierreResult(perHub, cierre){
+  const out=document.getElementById('cierre-result');
+  const withData=perHub.filter(h=>h.orderDate);
+  if(!withData.length){ out.innerHTML='<div class="coord-empty">Ningún hub tiene un pedido completo guardado. Vuelve a subir los pedidos.</div>'; return; }
+
+  const totalCand=withData.reduce((s,h)=>s+h.candidates.length,0);
+  const totalReserva=withData.reduce((s,h)=>s+h.reservaTotal,0);
+  const hubsCon=withData.filter(h=>h.candidates.length).length;
+  const conRecepcion=withData.reduce((s,h)=>s+h.candidates.filter(c=>c.clase==='B recepción').length,0);
+  const claseA=withData.reduce((s,h)=>s+h.candidates.filter(c=>c.clase==='A reserva').length,0);
+  const totalNoMatch=withData.reduce((s,h)=>s+h.noMatch.length,0);
+
+  const rows=withData.map((h,hi)=>{
+    const n=h.candidates.length;
+    const detail=[
+      ...h.candidates.map(c=>`<div class="cierre-detrow"><b>${escH(c.producto)}</b><span>pend ${_round1(c.pendiente)} · ${escH(c.clase)} · orig ${escH(c.origin)}${c.recepcion>0?` · recep ${_round1(c.recepcion)} @ ${escH((c.recepcionTs||'').slice(0,16).replace('T',' '))}`:''} · Final ${escH(String(c.final))}${c.pos?` · ${escH(String(c.pos).replace(/[\[\]]/g,''))}`:''}</span></div>`),
+      ...h.noMatch.map(c=>`<div class="cierre-detrow"><b>${escH(c.producto)}</b><span style="color:var(--orange)">sin coincidencia en inventario · pend ${_round1(c.pendiente)} · orig ${escH(c.origin)}</span></div>`)
+    ].join('');
+    const label = n ? `${n} SKU${n!==1?'s':''} con inventario nuevo` : (h.noMatch.length ? `0 · ${h.noMatch.length} sin coincidencia` : '0');
+    const gen = n
+      ? (h.r1Open
+          ? `<button class="cierre-gen" disabled title="Termina la ronda 1 primero">R1 en progreso</button>`
+          : `<button class="cierre-gen" onclick="event.stopPropagation();generarComplemento('${escH(h.hub)}')">Generar complemento</button>`)
+      : '';
+    return (n||h.noMatch.length)
+      ? `<div class="cierre-hubrow" onclick="var d=document.getElementById('cierre-det-${hi}');d.style.display=d.style.display==='none'?'block':'none'">
+           <span>${escH(h.hub)}${h.hasReport?'':' <span style="color:var(--orange)">(sin reporte R1)</span>'}</span>
+           <span class="cierre-count">${label} ▸ ${gen}</span>
+         </div><div id="cierre-det-${hi}" style="display:none">${detail}</div>`
+      : `<div class="cierre-hubrow"><span>${escH(h.hub)}</span><span class="cierre-count">0</span></div>`;
+  }).join('');
+
+  const anyGen=withData.some(h=>h.canGenerate);
+  out.innerHTML=`
+    <div class="cierre-headline">De <b>${totalReserva}</b> SKUs en reserva esta mañana, <b>${claseA}</b> tienen inventario ahora.</div>
+    ${rows}
+    ${anyGen?`<button class="btn btn-primary" style="margin-top:10px;padding:12px" onclick="generarTodosComplementos()">Generar todos los complementos</button>`:''}
+    <div class="cierre-foot">${totalCand} SKU${totalCand!==1?'s':''} con inventario nuevo en ${hubsCon} hub${hubsCon!==1?'s':''} · ${conRecepcion} con recepción registrada hoy${totalNoMatch?` · ${totalNoMatch} sin coincidencia`:''} · cierre ${escH(cierre.fecha)}</div>`;
+}
+
+// §3.5 Phase 5b — write orders/{hub-slug}/{date}-r2.csv from the candidate rows (verbatim originals,
+// Solicitud overridden to the outstanding balance). R1's order/report/registration are untouched.
+async function generarComplemento(hub, silent){
+  const h=_cierrePerHub.find(x=>x.hub===hub);
+  if(!h||!h.candidates.length){ if(!silent) toast('Sin candidatos para este hub'); return false; }
+  if(h.r1Open){ if(!silent) toast('Termina la ronda 1 de este hub primero'); return false; }
+  const fields=h.fields&&h.fields.length?h.fields:Object.keys(h.candidates[0].srcRow);
+  const rows=h.candidates.map(c=>({...c.srcRow, 'Solicitud (kg/pz)':String(c.pendiente)}));
+  const csv=Papa.unparse({fields, data:rows});
+  try{
+    await sbUpload(`orders/${HUB_SLUG[hub]}/${h.orderDate}-r2.csv`, csv);
+    if(!silent){ toast(`✓ Complemento de ${hub} — ${rows.length} SKUs`); revisarCierre(); }
+    return true;
+  }catch(e){ if(!silent) toast('❌ Error al generar: '+e.message); return false; }
+}
+async function generarTodosComplementos(){
+  const targets=_cierrePerHub.filter(h=>h.canGenerate);
+  let ok=0;
+  for(const h of targets){ if(await generarComplemento(h.hub, true)) ok++; }
+  toast(`✓ ${ok} complemento${ok!==1?'s':''} generado${ok!==1?'s':''}`);
+  revisarCierre();
+}
+
+/* ── REGISTRATION COPILOT (§3.7) — the typing stays manual; this makes it faster and harder to lose your place ── */
+let _regState=null;
+
+// Quantities as the exact string to type: integer for Pz, 2 decimals for Kg
+function regQtyStr(n, unit){
+  const v=Number(n)||0;
+  return unit==='Kg' ? v.toFixed(2) : String(Math.round(v));
+}
+function regTicksKey(path){ return 'calii_registro_ticks_'+path; }
+
+async function openRegistro(path, hub, dateStr){
+  const list=document.getElementById('reg-list');
+  document.getElementById('reg-title').textContent='Registro — '+hub;
+  list.innerHTML='<div class="coord-empty">Cargando reporte…</div>';
+  showScreen('registro');
+  let csv;
+  try{ csv=await sbFetch(path); }
+  catch(e){ list.innerHTML='<div class="coord-empty">No se pudo cargar el reporte.</div>'; return; }
+  // r2 reports start with a "# COMPLEMENTO" comment line — Papa skips it if we drop leading '#'
+  const clean=csv.split(/\r?\n/).filter(l=>!l.startsWith('#')).join('\r\n');
+  const p=Papa.parse(clean,{header:true,dynamicTyping:false,skipEmptyLines:true});
+  const rows=p.data.filter(r=>r['Producto']).map((r,i)=>{
+    const unit=r['Unidad']||'Pz';
+    const armado=parseFloat(r['Armado'])||0;
+    const solicitado=parseFloat(r['Solicitado'])||0;
+    // r2 report already carries the cumulative "Salida (kg/pz)"; r1 → Salida = Armado
+    const salida=r['Salida (kg/pz)']!==undefined&&r['Salida (kg/pz)']!=='' ? parseFloat(r['Salida (kg/pz)'])||0 : armado;
+    const falt=Math.max(0, solicitado-armado);
+    const estado=r['Estado']||'';
+    const exc=estado!=='Completo';
+    return { key:'r'+i, producto:r['Producto']||'', unit, salida, falt, estado, exc };
+  }).sort((a,b)=>a.producto.localeCompare(b.producto,'es'));
+
+  let ticks=[];
+  try{ ticks=JSON.parse(localStorage.getItem(regTicksKey(path))||'[]')||[]; }catch(_){}
+  _regState={ path, hub, dateStr, rows, ticks:new Set(ticks) };
+  renderRegistro();
+}
+
+function renderRegistro(){
+  if(!_regState) return;
+  const {rows,ticks}=_regState;
+  const revisar=rows.filter(r=>r.exc), completos=rows.filter(r=>!r.exc);
+  const total=rows.length, done=rows.filter(r=>ticks.has(r.key)).length;
+  document.getElementById('reg-done').textContent=done;
+  document.getElementById('reg-total').textContent=total;
+  document.getElementById('reg-bar-fill').style.width=(total?Math.round(done/total*100):0)+'%';
+
+  const rowHtml=r=>`<label class="reg-row${ticks.has(r.key)?' done':''}${r.exc?' exc':''}">
+      <input type="checkbox" ${ticks.has(r.key)?'checked':''} onchange="toggleRegTick('${r.key}')">
+      <span class="reg-prod">${escH(r.producto)}</span>
+      <span class="reg-qty">Salida <b>${regQtyStr(r.salida,r.unit)}</b>${r.falt>0?` · Falt <b>${regQtyStr(r.falt,r.unit)}</b>`:''}</span>
+      ${r.exc?`<span class="reg-tag">${escH(r.estado)}</span>`:''}
+    </label>`;
+
+  document.getElementById('reg-list').innerHTML=`
+    ${revisar.length?`<div class="reg-sect">⚠️ Revisar — ${revisar.length}</div>${revisar.map(rowHtml).join('')}`:''}
+    ${completos.length?`<div class="reg-sect">✅ Completos — ${completos.length}</div>${completos.map(rowHtml).join('')}`:''}`;
+}
+
+function toggleRegTick(key){
+  if(!_regState) return;
+  const s=_regState.ticks;
+  s.has(key)?s.delete(key):s.add(key);
+  try{ localStorage.setItem(regTicksKey(_regState.path), JSON.stringify([...s])); }catch(_){}
+  renderRegistro();
+}
+
+function downloadRegistroCSV(){
+  if(!_regState) return;
+  const {rows,hub,dateStr}=_regState;
+  const revisar=rows.filter(r=>r.exc), completos=rows.filter(r=>!r.exc);
+  const line=r=>[`"${r.producto.replace(/"/g,'""')}"`, regQtyStr(r.salida,r.unit), r.falt>0?regQtyStr(r.falt,r.unit):''].join(',');
+  const out=[
+    'Producto,Salida (kg/pz),Faltante',
+    '# REVISAR', ...revisar.map(line),
+    '# COMPLETOS', ...completos.map(line)
+  ].join('\r\n');
+  triggerDownload(out, `registro_${hub.replace(/\s+/g,'_')}_${dateStr}.csv`);
 }
 
 /* ── HISTORY (localStorage backup — silent, not shown in UI) ── */
@@ -1425,7 +2693,7 @@ function saveToHistory(){
     h=h.filter(e=>e.date===today);
     h.push({id:Date.now(),date:today,hub:S.hub,total:S.items.length,
       ok:S.results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length,
-      skipped:S.results.filter(r=>r.status===ITEM_STATUS.SKIPPED).length,
+      skipped:S.results.filter(r=>SKIP_STATUSES.includes(r.status)).length,
       time:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),filename,csv});
     localStorage.setItem(HISTORY_KEY,JSON.stringify(h));
   }catch(e){ console.warn('History save failed:',e); }
@@ -1445,11 +2713,14 @@ function requestSaveAndExit(){
   );
 }
 function saveAndExit(){
+  closeOpenSegment(); // close the timing segment so the gap until resume isn't counted
   savePartialProgress();
   const done=S.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
   const total=S.items.length;
   _pendingPartial=null;
-  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate='';
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
+  S.ronda=1; S.baseDate=''; S._r1Armado=null;
+  stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
   const agroup=document.getElementById('assembler-group');
@@ -1463,8 +2734,11 @@ function saveAndExit(){
 // Resets session state and goes home, but intentionally leaves the partial save intact.
 // The 100%-complete partial lets the assembler re-enter and retry finalizing later.
 function exitKeepingPartial(){
+  closeOpenSegment(); savePartialProgress(); // flush the closed segment into the kept partial
   _pendingPartial=null;
-  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate='';
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
+  S.ronda=1; S.baseDate=''; S._r1Armado=null;
+  stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
   const agroup=document.getElementById('assembler-group');
@@ -1475,11 +2749,14 @@ function exitKeepingPartial(){
 }
 
 /* ── NEW ORDER ── */
-function newOrder(){
+// keepPartial=true when the report was only queued offline — flushOutbox() clears it once it lands
+function newOrder(keepPartial){
   const _hub=S.hub, _orderDate=S.orderDate;
-  if(_hub) clearPartialSave(_hub, _orderDate);
+  if(_hub && keepPartial!==true) clearPartialSave(_hub, _orderDate);
   _pendingPartial=null;
-  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate='';
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
+  S.ronda=1; S.baseDate=''; S._r1Armado=null;
+  stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
   const agroup=document.getElementById('assembler-group');
@@ -1489,7 +2766,6 @@ function newOrder(){
 }
 
 /* ── NAV ── */
-function goBackToList(){ collapseDetail(); }
 function showScreen(name){ clearToast(); document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById('screen-'+name).classList.add('active'); if(name!=='list') window.scrollTo(0,0); }
 
 /* ── MODAL ── */
@@ -1535,6 +2811,8 @@ function savePartialProgress(){
   const payload={
     hub:S.hub, items:S.items,
     results:S.results.map(r=>({...r,confirmedAt:r.confirmedAt?r.confirmedAt.toISOString():null})),
+    segments:S.segments, // carried so a resumed order keeps its full timing history (§3.1)
+    ronda:S.ronda, baseDate:S.baseDate, r1Armado:S._r1Armado, // §3.5 round-2 context
     savedAt:new Date().toISOString(), orderDate:S.orderDate
   };
   try{ localStorage.setItem(partialKey(S.hub),JSON.stringify(payload)); }catch(_){}
@@ -1615,9 +2893,18 @@ function resumePartialSave(){
   S.hub=_pendingPartial.hub;
   S.items=_pendingPartial.items;
   S.results=restoreDates(_pendingPartial.results);
+  S.ronda=_pendingPartial.ronda||1; S.baseDate=_pendingPartial.baseDate||''; S._r1Armado=_pendingPartial.r1Armado||null;
+  // Carry the prior timing history, close any segment left open by a crash/exit, then open a fresh one.
+  // The gap between the last segment's end and now (e.g. overnight) is never counted.
+  S.segments=Array.isArray(_pendingPartial.segments)?_pendingPartial.segments.map(s=>({...s})):[];
+  closeOpenSegment();
+  S.segments.push(newSegment());
   S._orderLoaded=true; _pendingPartial=null;
+  S._picks=[]; S._picksMaxTs=''; S._lights={}; S._contradicted={}; S._picksReachable=true; _revisarOpen=false;
   document.getElementById('partial-save-notice').style.display='none';
+  savePartialProgress(); // persist the reopened-segment state immediately
   buildList(); showScreen('list');
+  loadPicks().then(()=>{ renderList(); }); startPicksPoll();
 }
 
 function discardPartialSave(){
@@ -1633,6 +2920,9 @@ function discardPartialSave(){
 /* ── BOOT ── */
 loadImageDB();
 loadAssemblers();
+updateOutboxPill();
+if(outboxRead().length){ flushOutbox(); startOutboxTimer(); }
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
 </script>
 </body>
 </html>

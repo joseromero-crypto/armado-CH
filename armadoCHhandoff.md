@@ -1,5 +1,12 @@
 # Calii Armado CH — Project Handoff
 
+> **⚠️ v2 (relaunch) changed a lot of what's below.** Sections 1–8 describe the v1 architecture and
+> still hold for the base flow. Everything added or changed in v2 — expiry read-only, timing metrics,
+> the coordinator metrics screen, the inventory semáforo (`picks` table), reserva / closing-inventory
+> cross-check, round-2 complementos, the registration copilot, and offline resilience — is in
+> **[§9 v2 relaunch](#9-v2-relaunch--what-changed)** at the end. Read v1 for the foundations, §9 for current behaviour.
+> The build spec that produced v2 is `armadoCH-v2-plan.md`.
+
 ## Overview
 Mobile-friendly web app for assembling inter-hub orders at Calii (Mexican grocery delivery). A coordinator uploads CSV order files; assemblers on phones select their hub, the order auto-loads, and they assemble item by item confirming barcodes and quantities. Completed reports are saved to Supabase and downloadable by the coordinator from any device.
 
@@ -359,4 +366,123 @@ Mexico operates on permanent CST (UTC-6) with no daylight saving. Any assembly c
 - `/Users/adrianrodriguez/Desktop/armado-CH/index.html` — edit directly
 - `/Users/adrianrodriguez/Desktop/armado-CH/imagedb.json` — read-only reference
 - `/Users/adrianrodriguez/Desktop/armado-CH/netlify.toml` — cache config
+- `/Users/adrianrodriguez/Desktop/armado-CH/sw.js` — service worker (v2)
 - `/Users/adrianrodriguez/Desktop/armado-CH/armadoCHhandoff.md` — this file
+- `/Users/adrianrodriguez/Desktop/armado-CH/armadoCH-v2-plan.md` — the v2 build spec
+
+---
+
+## 9. v2 relaunch — what changed
+
+Built in seven phases (`armadoCH-v2-plan.md` §4). Each was independently deployable. Ground rules that
+shaped everything: **the only assembler inputs are barcode + quantity**; advisory signals never block or
+reorder; **never break the safety invariant** (any assembly with ≥1 confirmed item leaves a report *or* a
+resumable partial); round 1 is sacred (nothing in §3.5 touches it).
+
+### 9.0 Tunable constants (top of the `<script>`)
+```
+IDLE_GAP_MIN     = 5     // min · inter-item gaps longer than this are subtracted from minutosActivos
+MAX_HANDLE_SEC   = 300   // per-item handling time cap
+FLAG_GAP_MIN     = 15    // min · a longer inter-item gap flags the assembly PAUSA_LARGA
+FLAG_MIN_SKUS    = 10    // orders smaller than this flag PEDIDO_CHICO
+POLL_MS          = 10000 // list-screen poll for other hubs' picks
+FLAG_NOTFOUND_MIN= 3     // distinct assemblers reporting "no se encontró" before a 🟡 (never 🔴)
+MIN_SEARCH_SEC   = 10    // a faltante faster than this feeds faltantesRapidos
+```
+
+### 9.1 Expiry is read-only (Phase 1)
+- No date field, no "Sin fecha" bypass. `computeMinExpDate()` / `formatMinExpDate()` kept, display-only.
+- Panel: amber **`📅 Vencimiento mínimo: DD/MM/AAAA`** banner directly above the qty input (nothing when the CSV has no shelf-life columns). List row: compact `📅 DD/MM` chip.
+- Report column `Fecha vencimiento` → **`Vencimiento mínimo`** (the computed minimum that was displayed; blank when none).
+- **⚑ Faltante is now a two-button sub-branch**: `📭 No se encontró` (`ITEM_STATUS.SKIPPED` → Estado `Faltante`) / `📅 Fecha no cumple` (`ITEM_STATUS.SHORTDATE` → Estado `Faltante (fecha corta)`). Both aggregate as "faltante" in the progress bar / summary tile; counted separately in metrics (`faltantes`, `fechaCorta`). `SKIP_STATUSES = [SKIPPED, SHORTDATE]`.
+- `screen-detail` (dead since the accordion refactor) deleted.
+- `index.html` `<head>` now carries `no-cache` meta tags (single-file app updates in place).
+
+### 9.2 Timing instrumentation + irregularity flags (Phase 2)
+- **Per-result fields**: `openedAt`, `firstOpenedAt`, `touches` (in `openDetail`); `handleSec` (capped at `MAX_HANDLE_SEC`), `luzAlSkip` (in `confirmItem`/`markFaltante`); `bcAttempts` (in `onBCInput`); `_contradicted`, `_senal` (from the semáforo).
+- **Per-session** `S.segments = [{start, end, assembler}]` — opened in `startAssembly`/`resumePartialSave`, closed in `saveAndExit`/`showSummary`/`exitKeepingPartial`, persisted in the partial payload. The gap between two segments (e.g. overnight) is never counted.
+- **`computeOrderMetrics(items, results, segments, hub, opts)`** → the sidecar payload: `minutosReloj` (Σ segment durations) and `minutosActivos` (minus inter-item gaps > `IDLE_GAP_MIN`) — both reported, never merged; `skusHrReloj/Activo`, `segMedianoPorSku`, per-status counts, `porArmador[]`, `flags[]`, plus the §3.4 counters (`luzAlSkip{}`, `faltantesRapidos`, `faltantesDesmentidos`, `rojos/verdesEncontrados`), `ronda`.
+- **Flags** (`FLAG_META` maps code → icon + text): `CRUZA_DIA` 🌙, `MULTI_SESION` ⏸, `PAUSA_LARGA` 🕐, `MULTI_ARMADOR` 👥, `PEDIDO_CHICO` 🔹, `INCOMPLETO` ⏳, `REPORTE_DIFERIDO` 📶 (set when the report went through the outbox), `SIN_TIEMPO` ⛔. Nothing is ever excluded — irregular assemblies are flagged, never dropped.
+- **Sidecar**: `metrics/{hub-slug}/{same stem as the report}.json`, uploaded fire-and-forget in `showSummary`'s success branch (never blocks *Terminar armado*).
+- Report CSV gains **`Segundos en producto`** (`handleSec`, blank for pending).
+
+### 9.3 Coordinator metrics screen (Phase 3)
+- `📊` in the coordinator header → `screen-metrics`. A **table**, one row per sidecar: `⚑ · Fecha · Hub · Armador(es) · SKUs · Min reloj · Min activos · SKUs/hr · Faltantes · Fecha corta · % completo · Seg/SKU`.
+- Filters (armador / hub / periodo 7-30-90-todo / `Solo irregulares`, off by default) combine; click a header to sort (default Fecha desc). Flagged rows: amber left edge, never hidden.
+- Footer: weighted SKUs/hr = **total SKUs ÷ total hours** (not the mean of rates); rows flagged `SIN_TIEMPO` are excluded and the footer says so.
+- `⬇ CSV` exports the current filtered+sorted view + `Flags` + `Regular` columns, BOM, `metricas_armado_{fecha}.csv`.
+- Immutable payloads cached in `localStorage` `calii_metrics_cache` (keyed by path); `↺` forces a full refetch. Empty/unreachable `metrics/` → empty state, no error.
+
+### 9.4 Inventory semáforo — cross-hub contention (Phase 4)
+- **`picks` Postgres table** (Supabase project, `INSERT` + `SELECT` for `anon`). One row per confirm/faltante via `recordPick()`: `sku_key` (`cleanBC` or `norm:<name>`), `cantidad` (0 for faltante), `senal` (`no_encontrado`/`fecha_corta`), `luz`, `seg_busqueda`, `ronda`. SQL is in `armadoCH-v2-plan.md` §3.4.
+- **Poll** every `POLL_MS` while the list screen is open, plus after the assembler's own confirm, on order load, and on tapping the `N/N` progress label. Incremental (`ts >= last seen`).
+- **Light** = `inventario − consumido por otros hubs` (own-hub picks are you). No consumption and no testimony → **green** (nothing shown), whatever the stock level — a zero-inventory SKU is the normal Faltante flow, not contention. 🟡 `0 < disponible < solicitado` **or** ≥ `FLAG_NOTFOUND_MIN` assemblers reported not finding it. 🔴 `disponible ≤ 0`, **arithmetic only** — testimony never reaches red; a `norm:`-joined SKU never reaches red.
+- Panel block above the qty input shows the arithmetic (`Inventario CH 15 · otros hubs ya armaron 15 hoy`). **An open panel is never re-rendered by a poll** — chips update on list rows and on next open.
+- Nothing is disabled or reordered by the light.
+- **🔁 por revisar**: if you skip a SKU and another assembler later confirms a pick on it, your row gets a 🔁 chip, drops to a collapsed section at the bottom (`toggleRevisar()`), and the list header shows `🔁 N`. Pending rows never move. Metrics: `faltantesDesmentidos`.
+- **Coordinator → "Inventario — hoy"** (collapsible, `toggleInvToday`): *⚠️ Conflictos* (SKUs where total demand across hubs > inventory, sorted by shortfall — parses every hub's current order) and *📭 Faltantes de hoy* (every unassembled SKU by hub + reason, contradictions flagged).
+- **`picks` unreachable → no lights, no chips, no errors; assembly runs exactly as v1.**
+
+### 9.5 Reserva + closing-inventory cross-check (Phase 5a) — read-only, measures nothing generated
+- On upload, `doUpload` also writes `pedido_completo/{hub-slug}/{orderDate}.json` = `{orderDate, hub, uploadedAt, fields, rows}` — the **full request verbatim** (the uploaded order file is unchanged).
+- `fetchOrderForHub` filters the assembler's list to **activos** (`Inventario hub saliente > 0`). Reserva rows are never shown. Fallback: an order with no inventory data at all shows everything (older / pre-filtered files unaffected).
+- `📄` per hub row → `downloadNoSurtido()` → `no_surtido_{hub}_{fecha}.csv` (the reserva rows, original headers).
+- **Coordinator → "🔄 Inventario de cierre"**: `uploadCierre()` parses the ~1 MB Retool export coordinator-side, stores a reduced projection at `inventario_cierre/{YYYY-MM-DD}.json` (`{k, nk, producto, unidad, final, recepcion, recepcionTs}`). **Revisar** (`revisarCierre`) cross-checks every hub's outstanding balance (`solicitado − armado`, from the latest R1 report + any R2) against it:
+  - **Class A** — was reserva, `Final [AUTO] > 0` now (safe to test on the level; the row was never shown so no undiscounted assembly inflates it).
+  - **Class B** — was an activo still short, with `Recepción > 0` and `Actualización recepción` **after** the order upload. `parseMxTs()` reads a tz-less timestamp as Mexico CST so this comparison is timezone-independent.
+  - `sin coincidencia` rows are listed separately, never assumed to have or lack stock.
+  - Headline: *"De N SKUs en reserva esta mañana, M tienen inventario ahora"* — the number the pilot exists to produce.
+- Join key: `cleanBC` first, `normName` when the barcode is blank or duplicated in the inventory file.
+
+### 9.6 Round-2 complementos (Phase 5b) — conditional on 5a's pilot number; code is ready
+- **Revisar** shows **[ Generar complemento ]** per hub (+ **Generar todos**). Disabled while that hub's round 1 is unfinished (a `partials/{hub}/{date}.json` exists).
+- `generarComplemento()` writes `orders/{hub-slug}/{orderDate}-r2.csv` from the candidate rows **verbatim** (all columns, incl. shelf-life), with `Solicitud (kg/pz)` overridden to the **outstanding balance**. Re-running Revisar drops already-generated SKUs (idempotent — `generatedR2Keys()`).
+- The complemento auto-loads as **"🔄 Complemento del {fecha}"**: `S.ronda = 2`, `S.orderDate = "{date}-r2"` (own partial path, no collision with R1), `S._r1Armado` fetched from the R1 report. `recordPick` and the picks poll use `S.ronda`, so a complemento's semáforo only counts round-2 picks.
+- **R2 register report**: `reports/{hub-slug}/{date}_r2_{HH-MM}_{Armadores}.csv`. First line `# COMPLEMENTO — capturar "Salida (kg/pz)"…`. Extra columns `Armado en la mañana` (R1 qty) · `Armado complemento` (R2 qty) · **`Salida (kg/pz)`** (their sum — the cumulative total the registrar types by hand). Only touched SKUs.
+- **Round 1's order, report format, filename and registration step are byte-for-byte unchanged.** Coordinator report list indents R2 reports under their R1 sibling.
+
+### 9.7 Registration copilot (Phase 5c)
+- `📋` on each coordinator report row → `screen-registro`. Parses the report, sorts rows **alphabetically by product** (`localeCompare('es')`), splits into **⚠️ Revisar** (Estado ≠ Completo) then **✅ Completos**.
+- Each row: a checkbox (tick as typed) + `Salida` + `Faltante` (= `Solicitado − Armado`). Running `N / total` counter; ticks persist in `localStorage` `calii_registro_ticks_{reportPath}`.
+- `⬇` → `registro_{hub}_{fecha}.csv` — only `Producto, Salida (kg/pz), Faltante`, section-separated, BOM. Quantities as the exact string to type (integer for Pz, 2 decimals for Kg).
+- **The typing stays 100% manual** — no Retool connection exists. This only makes it faster and harder to lose your place.
+
+### 9.8 Offline resilience (Phase 6)
+- **Outbox** — `localStorage` `calii_outbox`, entries `{id, kind:'report'|'metrics'|'pick', path, body, contentType, hub, orderDate, tries, ...}`. `isNetErr(e)` = the thrown message does **not** start with `NNN:` (a real server 4xx rethrows; a network failure queues).
+- `sbUploadQueued(path, body, meta)` → `'uploaded'` | `'queued'` (or rejects on a hard 4xx). `flushOutbox()` runs on boot, `window 'online'`, opening the coordinator, and a 30 s timer that only ticks while the outbox is non-empty. Picks route through the same queue.
+- **Invariant**: a *queued* report does **not** clear the partial in `showSummary` — `flushOutbox()` clears it (`clearPartialSave(hub, orderDate)`) when that specific report finally lands. `newOrder(keepPartial)` — the queued path passes `true`.
+- **Summary screen, three states**: `✅ Reporte guardado` → *Terminar* → `newOrder()`; `📶 Sin conexión — el reporte se enviará solo` → *Terminar* **enabled** → `newOrder(true)`; `❌ Error al guardar` (hard 4xx) → *Reintentar* + *Salir (reporte pendiente)* (unchanged).
+- **Home pill** `⏳ N pendiente(s) de enviar` (tap to flush; green `✓ Enviado` flash on success).
+- **Order cache**: `fetchOrderForHub` stores `{orderDate, ronda, baseDate, items}` in `calii_order_cache_{hubSlug}` on success; on fetch failure it loads from there and shows `⚠ Sin conexión — usando el pedido guardado del {fecha}`.
+- **Service worker** (`sw.js`): **network-first** for the shell (`index.html`, `imagedb.json`, PapaParse CDN) with cache fallback — online always gets the freshest deploy, offline still opens. **Deviation from the plan's "cache-first"** — chosen to eliminate the stale-app footgun. Supabase requests are never intercepted. **`CACHE_NAME` must be bumped on every deploy that changes `index.html`.** `skipWaiting` + `clients.claim`. SW registration silently no-ops on `http://192.168.x.x` LAN testing (needs HTTPS or localhost); works on Netlify.
+- `netlify.toml` now sets `max-age=0, must-revalidate` for `/index.html` and `/sw.js`.
+
+### 9.9 New Supabase storage paths (v2)
+| Path | Written by | Content |
+|---|---|---|
+| `metrics/{hub-slug}/{report-stem}.json` | `uploadMetricsSidecar` | timing/flags sidecar (v:2) |
+| `pedido_completo/{hub-slug}/{orderDate}.json` | `doUpload` | full request verbatim (`fields` + `rows`) |
+| `inventario_cierre/{YYYY-MM-DD}.json` | `uploadCierre` | reduced closing-inventory projection |
+| `orders/{hub-slug}/{orderDate}-r2.csv` | `generarComplemento` | round-2 order (Solicitud = outstanding balance) |
+| `reports/{hub-slug}/{date}_r2_{HH-MM}_{Armadores}.csv` | `showSummary` (ronda 2) | round-2 register report (3 qty columns) |
+
+Plus the `picks` Postgres table. New `localStorage` keys: `calii_outbox`, `calii_metrics_cache`, `calii_order_cache_{hubSlug}`, `calii_registro_ticks_{path}`.
+
+### 9.10 Test fixtures
+Keep one real order export and one real inventory export in `fixtures/` — **untracked** (`.gitignore` covers `fixtures/`, `inventario_*.csv`, etc.). The repo pushes to a public GitHub, and these are live business data.
+
+---
+
+## v3 backlog (deferred, with reasoning)
+
+- **Prefilled quantity** — one-tap accept of the requested amount. Real speed lever, but it invites confirming a quantity that was never physically counted, and the error lands in inventory where it's expensive. Revisit only if v2 data shows quantity entry is a top-3 time sink; then consider prefilling only for `Pz` items with requested qty = 1.
+- **Parallel multi-assembler picking** — two+ assemblers on one order simultaneously, each seeing what the other has claimed. Needs real-time claim locking (Supabase Realtime or a short-poll claims file), not an extension of the one-writer partial model. Biggest available cut in wall-clock minutes per order, and the biggest build. The `picks` table is the foundation.
+- **Barcode exception simplification** — collapse `UNAVAIL` / `WRONGSYS` into one escape if v2 data shows the distinction isn't being used correctly. (`WRONGSYS` captures the physical code, which is the input for fixing the catalog — that's why it survived v2.)
+- **Scheduled / automatic round-2 generation** — v2 has a button. Automate once the frequency is known from 5a.
+- **Websocket / Supabase Realtime for the semáforo** — as a speed layer *over* the 10 s poll, never the source of truth (a warehouse wifi drop kills a socket silently; a missed poll is just re-asked).
+- **Consolidated R1+R2 report** — only correct if registration ever moves to once-before-dispatch. Today R1 is registered immediately, so a consolidated file would double-count.
+- **Retool live inventory** (read-only access) — the real fix for §9.5/§9.4: swap the `inventario` term for the live number, delete the closing-inventory upload step. Different ask from the write access §9.7 would need.
+
+### Open questions (Jose)
+1. **How is an assembly registered — typed row by row, or pasted/uploaded?** The order export ships with `Salida (kg/pz)`, `Faltante`, `Nro. de unidades`, `Envío - Solicitud (#)` empty — fill-in fields. If it's manual typing, the app could emit those rows pre-filled (bigger saving than anything on the assembly side). Shapes how far §9.7 goes.
+2. **What time is the closing inventory export pulled?** Assumed ~17:00, leaving the evening for a complemento. Affects §9.5's operational fit, not the code.

@@ -1,0 +1,6 @@
+# Real business data kept locally as test fixtures — never commit (repo pushes to GitHub)
+fixtures/
+*_fixture.csv
+inventario_*.csv
+registro_de_inventario*.csv
+pedido_completo*.csv
