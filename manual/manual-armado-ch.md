@@ -490,6 +490,7 @@ se marca para que se sepa por qué un número se ve raro.
 | 🔹 | Pedido chico (menos de 10 SKUs) — la velocidad no es confiable |
 | ⏳ | Se terminó con productos sin armar |
 | 📶 | El reporte se envió después, sin conexión |
+| 📅 | La solicitud no era del día en que se armó (lista vieja) |
 | ⛔ | Sin dato de tiempo — las columnas de velocidad no significan nada |
 
 ### Filtros y descarga

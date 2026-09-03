@@ -27,10 +27,15 @@ Mobile-friendly web app for assembling inter-hub orders at Calii (Mexican grocer
 ## File Structure
 ```
 armado-CH/
-├── index.html           # entire app — single file, no build step
-├── imagedb.json         # 9,513-entry image DB (~1.3MB), keyed by barcode + normalized name
-├── netlify.toml         # cache headers (imagedb.json: 30-day cache)
-└── armadoCHhandoff.md   # this file
+├── index.html                     # entire app — single file, no build step
+├── imagedb.json                   # bundled image DB (~1.3MB) — fallback floor; live copy is imagedb/latest.json in Supabase (v2.1 §10.4)
+├── sw.js                          # service worker (network-first shell cache)
+├── netlify.toml                   # cache headers
+├── manual/manual-armado-ch.md     # the manual — single source; the in-app screen fetches this file (v2.1 §10.5)
+├── manual/manual-armado-ch.pdf    # derived, may lag the .md
+├── armadoCHhandoff.md             # this file
+├── armadoCH-v2-plan.md            # v2 build spec
+└── armadoCH-v2.1-plan.md          # v2.1 fix-pack spec
 ```
 
 ---
@@ -411,7 +416,7 @@ MIN_SEARCH_SEC   = 10    // a faltante faster than this feeds faltantesRapidos
 - Report CSV gains **`Segundos en producto`** (`handleSec`, blank for pending).
 
 ### 9.3 Coordinator metrics screen (Phase 3)
-- `📊` in the coordinator header → `screen-metrics`. A **table**, one row per sidecar. A sticky first column holds a `🗑` (`deleteMetric` — removes just that sidecar + cache entry, leaves the report CSV), then: `⚑ · Fecha · Hub · Armador(es) · SKUs · Min reloj · Min activos · SKUs/hr · Faltantes · Fecha corta · % completo · Seg/SKU`.
+- `📊` in the coordinator header → `screen-metrics`. A **table**, one row per sidecar. A sticky first column holds a `🗑` (`deleteMetric` — removes just that sidecar + cache entry, leaves the report CSV), then: `⚑ · Fecha · Hub · Armador(es) · SKUs · Min reloj · Min activos · SKUs/hr · Faltantes · Fecha corta · % completo · Seg/SKU`. *(v2.1 §10.5 added `% parcial · % sobrante · % faltante · % surtido` between `% completo` and `Seg/SKU`.)*
 - Filters (armador / hub / periodo 7-30-90-todo / `Solo irregulares`, off by default) combine; click a header to sort (default Fecha desc). Flagged rows: amber left edge, never hidden.
 - Footer: weighted SKUs/hr = **total SKUs ÷ total hours** (not the mean of rates); rows flagged `SIN_TIEMPO` are excluded and the footer says so.
 - `⬇ CSV` exports the current filtered+sorted view + `Flags` + `Regular` columns, BOM, `metricas_armado_{fecha}.csv`.
@@ -628,8 +633,8 @@ New `localStorage`: `calii_imgdb_cache` (keyed on `version.txt`). `faltantes_{da
 
 ### 10.7 Still open
 
-- Real-phone test of §8.7 / §8.11 (keyboard + viewport — DevTools can't reproduce it).
-- One real end-to-end assembly and one genuinely-old report through the registration copilot (§8.4 legacy path).
+- Deployed and phone-verified (Sept 2026). Worth a real old report through the registration copilot to
+  exercise the §8.4 legacy-status path if a pre-fix-pack report is still in the bucket.
 - `manual/manual-armado-ch.pdf` lags the `.md` — regenerate it or delete it (the in-app ⬇ PDF button covers the need).
 - Plan open questions: §7-Q3 (resolved: `Image URL`), §11-Q1 (Sobrante to system — no code impact), §7-Q1/Q2
   and §11-Q2/Q3 were answered by Jose and are built.
