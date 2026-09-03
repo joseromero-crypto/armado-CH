@@ -1,11 +1,12 @@
 /* Calii Armado CH — service worker (§3.6)
    Network-first for the app shell: online always gets the freshest deploy, offline falls back to cache.
    BUMP CACHE_NAME on every deploy that changes index.html. */
-const CACHE_NAME = 'calii-armado-v2-1';
+const CACHE_NAME = 'calii-armado-v2-1-fixpack';
 const SHELL = [
   './',
   './index.html',
   './imagedb.json',
+  './manual/manual-armado-ch.md',
   'https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js'
 ];
 

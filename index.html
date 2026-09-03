@@ -17,6 +17,7 @@
       --gray-300:#E0E0E0; --gray-400:#BDBDBD; --gray-500:#9E9E9E;
       --gray-600:#757575; --gray-700:#616161; --gray-900:#212121;
       --radius:14px; --radius-sm:8px;
+      --list-header-h:134px; /* list header height (§8.7 two rows + §8.9 filter segment) — keeps the panel sticky title (§8.11) and .item-row scroll offset in sync */
       --shadow-sm:0 1px 4px rgba(0,0,0,.10); --shadow-md:0 4px 16px rgba(0,0,0,.14);
     }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -50,8 +51,16 @@
     .fetch-status{margin-top:12px;padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;display:flex;align-items:center;gap:8px}
     .fetch-status.loading{background:#FFF8E1;color:#E65100}
     .fetch-status.ok{background:var(--green-light);color:var(--green-dark);font-weight:600}
+    .fetch-status.warn{background:#FFF3E0;color:#E65100;font-weight:700;border:1.5px solid #E65100}
     .fetch-status.error{background:var(--red-light);color:var(--red)}
     .fetch-status.hidden{display:none}
+    /* §8.6c — 📋 Pedidos armados (assembler-side, read-only) */
+    .pa-toggle{width:100%;text-align:left;background:var(--gray-100);border:1px solid var(--gray-300);border-radius:var(--radius-sm);padding:12px 14px;font-size:14px;font-weight:700;color:var(--gray-700);cursor:pointer}
+    .pa-row{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:white;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:11px 12px;margin-top:6px;cursor:pointer}
+    .pa-row:hover{border-color:var(--green)}
+    .pa-row-hub{font-weight:700;font-size:13px;color:var(--gray-900);flex-shrink:0}
+    .pa-row-meta{flex:1;font-size:12px;color:var(--gray-500);min-width:0}
+    .pa-row-nn{font-size:12px;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums;flex-shrink:0}
     .db-status{margin-top:8px;font-size:12px;color:var(--gray-500);display:flex;align-items:center;gap:6px}
     .db-dot{width:8px;height:8px;border-radius:50%;background:var(--gray-300);flex-shrink:0}
     .db-dot.ok{background:#00c3b3}
@@ -80,6 +89,7 @@
     .coord-hub-badge{font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px}
     .coord-hub-badge.loaded{background:var(--green-light);color:var(--green-dark)}
     .coord-hub-badge.empty{background:var(--gray-100);color:var(--gray-500)}
+    .coord-hub-badge.stale{background:#FFF3E0;color:#E65100;border:1px solid #E65100}
     .coord-hub-badge.uploading{background:#FFF8E1;color:var(--orange)}
     .coord-upload-btn{background:var(--green);color:white;border:none;border-radius:var(--radius-sm);padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;position:relative;overflow:hidden;flex-shrink:0}
     .coord-upload-btn input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -127,26 +137,37 @@
 
     /* LIST */
     .list-header{background:white;box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:20}
-    .list-header-row{display:flex;align-items:center;gap:10px;padding:12px 14px 8px}
-    .list-hub{font-weight:800;font-size:16px;color:var(--green);flex:1}
-    .list-prog-label{font-size:13px;color:var(--gray-500);font-weight:700;white-space:nowrap}
+    .list-header-row{display:flex;align-items:center;gap:10px;padding:12px 14px 6px}
+    .list-header-row.row2{padding:2px 14px 8px;justify-content:space-between}
+    .list-hub{font-weight:800;font-size:16px;color:var(--green);flex:1;min-width:0}
+    .list-prog-label{font-size:15px;color:var(--gray-700);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
     .finish-hdr-btn{padding:7px 14px;border-radius:20px;border:1.5px solid var(--green);background:white;color:var(--green);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+    /* §8.9 — pending-only view filter. Pure display filter; never re-sorts, renumbers or touches S.results. */
+    .list-filter-seg{display:flex;width:max-content;margin:0 14px 8px;border:1.5px solid var(--gray-300);border-radius:20px;overflow:hidden}
+    .list-filter-seg button{padding:5px 16px;border:none;background:white;color:var(--gray-600);font-size:12px;font-weight:700;cursor:pointer}
+    .list-filter-seg button.active{background:var(--green);color:white}
     .prog-bar{height:4px;background:var(--gray-200)}
     .prog-fill{height:100%;background:var(--green);transition:width .4s}
     .list-body{flex:1;padding:10px 12px 80px}
-    .item-row{display:flex;align-items:center;background:white;border-radius:var(--radius-sm);margin-bottom:8px;box-shadow:var(--shadow-sm);overflow:hidden;cursor:pointer;border-left:4px solid transparent;transition:border-color .15s,box-shadow .15s}
+    .list-body.filter-pending .item-row:not(.status-pending){display:none}
+    .list-body.filter-pending #revisar-section .item-row{display:flex}
+    .pending-empty{flex-direction:column;align-items:center;gap:12px;padding:40px 16px;color:var(--gray-500);font-size:15px;font-weight:600;text-align:center}
+    .pending-empty-btn{padding:10px 20px;border-radius:20px;border:1.5px solid var(--green);background:white;color:var(--green);font-size:14px;font-weight:700;cursor:pointer}
+    .item-row{display:flex;align-items:center;background:white;border-radius:var(--radius-sm);margin-bottom:8px;box-shadow:var(--shadow-sm);overflow:hidden;cursor:pointer;border-left:4px solid transparent;transition:border-color .15s,box-shadow .15s;scroll-margin-top:calc(var(--list-header-h) + 6px)}
     .item-row:hover{box-shadow:var(--shadow-md)}
     .item-row:active{opacity:.85}
     .item-row.status-completed{border-color:#00c3b3}
     .item-row.status-partial{border-color:var(--orange)}
+    .item-row.status-sobrante{border-color:var(--orange)}
     .item-row.status-skipped{border-color:var(--red)}
     .item-row.status-shortdate{border-color:var(--orange)}
-    .item-row.status-nobc,.item-row.status-wrongsys{border-color:#FFA000}
+    .item-row.status-nobc,.item-row.status-wrongsys{border-color:#FFA000} /* legacy reports/partials only (§8.4) */
+    .row-bc-warn{font-size:13px;color:var(--orange);margin-left:1px}
     .row-thumb{width:64px;height:64px;flex-shrink:0;overflow:hidden;background:var(--gray-50);display:flex;align-items:center;justify-content:center}
     .row-thumb img{width:100%;height:100%;object-fit:contain}
     .row-thumb-ph{font-size:28px;color:var(--gray-300)}
     .row-body{flex:1;padding:10px 10px 10px 12px;min-width:0}
-    .row-name{font-size:14px;font-weight:700;color:var(--gray-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .row-name{font-size:14px;font-weight:700;color:var(--gray-900);white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25}
     .row-meta{display:flex;align-items:center;gap:8px;margin-top:4px}
     .row-pos{font-size:11px;font-family:monospace;font-weight:700;background:var(--gray-100);border-radius:4px;padding:2px 6px;color:var(--gray-600);white-space:nowrap}
     .row-qty{font-size:13px;color:var(--gray-500)}
@@ -210,12 +231,18 @@
     .stat-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500);margin-top:2px}
     .c-green{color:#00c3b3}.c-orange{color:var(--orange)}.c-red{color:var(--red)}.c-gray{color:var(--gray-500)}
     .sum-list{flex:1;overflow-y:auto;padding:10px 14px}
-    .sum-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-200)}
+    /* §8.6a/b — Armado is the number being typed at registration: big, bold, right. Solicitado + Falta beneath the name. */
+    .sum-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--gray-200)}
     .sum-row:last-child{border-bottom:none}
     .sum-icon{font-size:20px;flex-shrink:0}
     .sum-detail{flex:1;min-width:0}
-    .sum-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .sum-qty{font-size:12px;color:var(--gray-500);margin-top:2px}
+    .sum-name{font-size:14px;font-weight:700;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25}
+    .sum-qty{font-size:12px;color:var(--gray-500);margin-top:3px}
+    .sum-qty b{color:var(--orange)}
+    .sum-bc{font-family:monospace;font-size:12px;color:var(--gray-600)}
+    .sum-armado{flex-shrink:0;text-align:right;font-size:24px;font-weight:900;color:var(--gray-900);line-height:1}
+    .sum-armado.zero{color:var(--red)}
+    .sum-armado-u{font-size:12px;font-weight:600;color:var(--gray-500);margin-left:3px}
     .sum-pos{font-size:11px;color:var(--gray-400);font-family:monospace;flex-shrink:0}
     .sum-actions{padding:14px 16px 28px;background:white;box-shadow:0 -2px 12px rgba(0,0,0,.08);display:flex;flex-direction:column;gap:10px}
     .sum-upload-status{font-size:13px;text-align:center;padding:6px 12px;border-radius:8px;margin-bottom:2px;min-height:28px}
@@ -258,7 +285,15 @@
     }
 
     /* INLINE EXPAND PANEL */
-    .item-expand-panel{background:white;border-top:2px solid var(--green);border-radius:0 0 var(--radius-sm) var(--radius-sm);margin-top:-8px;margin-bottom:8px;box-shadow:var(--shadow-md);overflow:hidden}
+    .item-expand-panel{background:white;border-top:2px solid var(--green);border-radius:0 0 var(--radius-sm) var(--radius-sm);margin-top:-8px;margin-bottom:8px;box-shadow:var(--shadow-md)}
+    /* §8.11b — the panel carries its own product name, sticky, so a scroll landing low never hides which item you're on. No overflow:hidden on the panel — it would break the sticky. */
+    .d-panel-title{position:sticky;top:var(--list-header-h);z-index:6;display:flex;align-items:flex-start;gap:8px;background:white;border-bottom:1px solid var(--gray-200);padding:10px 16px}
+    .d-panel-title-name{font-size:14px;font-weight:800;color:var(--gray-900);line-height:1.25;flex:1;min-width:0}
+    .d-panel-title-pos{font-size:11px;font-family:monospace;font-weight:700;background:var(--gray-100);border-radius:4px;padding:3px 6px;color:var(--gray-600);white-space:nowrap;flex-shrink:0}
+    /* §8.3 — 🔁 contradicted row: name the finder in the panel */
+    .contradicted-note{background:#FFF8E1;border-bottom:1px solid #FFCC80;color:#8a5a00;font-size:13px;font-weight:700;line-height:1.35;padding:10px 16px}
+    .contradicted-note-list{font-weight:600;font-size:12px;margin-top:3px}
+    .item-expand-panel .inline-actions:last-child{border-radius:0 0 var(--radius-sm) var(--radius-sm)}
     .item-row.expanded{border-radius:var(--radius-sm) var(--radius-sm) 0 0;margin-bottom:0;border-color:var(--green)!important}
     .item-row.expanded .row-chevron{transform:rotate(90deg)}
     .row-chevron{transition:transform .2s}
@@ -283,8 +318,8 @@
     .sem-rojo .sem-sub{color:#7a1c1c}
     .sem-amarillo .sem-sub{color:#7a5a00}
     .revisar-hdr-chip{padding:6px 10px;border-radius:20px;border:1.5px solid #FFA000;background:#FFF8E1;color:#8a5a00;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;margin-right:4px}
-    .revisar-section{margin-top:14px;border-top:2px dashed var(--gray-300);padding-top:10px}
-    .revisar-head{width:100%;text-align:left;background:#FFF8E1;border:1px solid #FFCC80;border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-weight:700;color:#8a5a00;cursor:pointer;margin-bottom:8px}
+    .revisar-section{margin-top:14px;border-top:2px dashed var(--gray-300);padding-top:10px;scroll-margin-top:calc(var(--list-header-h) + 6px)}
+    .revisar-head{background:#FFF8E1;border:1px solid #FFCC80;border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;font-weight:700;color:#8a5a00;margin-bottom:8px}
     .invsub-title{font-size:13px;font-weight:800;color:var(--gray-700);margin-bottom:8px}
     .invrow{display:flex;flex-direction:column;gap:2px;padding:8px 10px;background:white;border-radius:var(--radius-sm);box-shadow:var(--shadow-sm);margin-bottom:6px;font-size:13px}
     .invrow span{font-size:12px;color:var(--gray-600)}
@@ -318,6 +353,45 @@
     .reg-qty{font-size:12px;color:var(--gray-500);white-space:nowrap;font-variant-numeric:tabular-nums}
     .reg-qty b{color:var(--gray-900)}
     .reg-tag{font-size:10px;font-weight:700;color:var(--orange);background:var(--orange-light);border-radius:4px;padding:2px 5px;white-space:nowrap}
+
+    /* MANUAL (§8.10) */
+    .manual-body{padding:14px 12px 60px;max-width:660px;margin:0 auto;width:100%}
+    .manual-sec{border:1px solid var(--gray-200);border-radius:var(--radius-sm);margin-bottom:8px;background:white}
+    .manual-sec>summary{padding:13px 14px;font-size:15px;font-weight:800;color:var(--gray-900);cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:10px}
+    .manual-sec>summary::-webkit-details-marker{display:none}
+    .manual-sec>summary::after{content:'▸';color:var(--gray-400);flex-shrink:0}
+    .manual-sec[open]>summary::after{content:'▾'}
+    .manual-sec-body{padding:2px 15px 16px;font-size:14px;line-height:1.55;color:var(--gray-700)}
+    .manual-sec-body h3{font-size:14px;font-weight:800;color:var(--gray-900);margin:16px 0 6px}
+    .manual-sec-body h4{font-size:13px;font-weight:700;color:var(--gray-800);margin:12px 0 4px}
+    .manual-sec-body p{margin:8px 0}
+    .manual-sec-body ul,.manual-sec-body ol{margin:8px 0;padding-left:20px}
+    .manual-sec-body li{margin:4px 0}
+    .manual-sec-body code{background:var(--gray-100);border-radius:4px;padding:1px 5px;font-size:12px;font-family:monospace}
+    .manual-sec-body pre{background:var(--gray-100);border-radius:var(--radius-sm);padding:10px 12px;overflow-x:auto;font-size:12px;line-height:1.45;white-space:pre;-webkit-overflow-scrolling:touch}
+    .manual-sec-body blockquote{border-left:3px solid var(--green);background:var(--green-light);padding:8px 12px;margin:8px 0;border-radius:0 6px 6px 0;color:var(--gray-800)}
+    .manual-sec-body .mtable{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0}
+    .manual-sec-body table{border-collapse:collapse;width:100%;font-size:12px}
+    .manual-sec-body th,.manual-sec-body td{border:1px solid var(--gray-200);padding:6px 8px;text-align:left;vertical-align:top}
+    .manual-sec-body th{background:var(--gray-100);font-weight:700;white-space:nowrap}
+    .manual-pdf-btn{background:var(--green);color:white;border:none;border-radius:20px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+    .manual-pdf-btn:active{opacity:.85}
+    .manual-print-title{display:none}
+    @media print{
+      body{background:white}
+      .screen{display:none!important}
+      #screen-manual.active{display:block!important}
+      #screen-manual .coord-header{display:none}
+      .manual-print-title{display:block;font-size:18px;font-weight:800;margin:0 0 14px;padding:0}
+      .manual-body{max-width:none;padding:0}
+      .manual-sec{border:none;margin:0 0 4px;break-inside:avoid}
+      .manual-sec>summary{font-size:15px;padding:8px 0 4px;border-bottom:1px solid #bbb}
+      .manual-sec>summary::after{content:''!important}
+      .manual-sec-body{padding:6px 0 12px}
+      .manual-sec-body pre,.manual-sec-body .mtable{overflow:visible}
+      .manual-sec-body pre{white-space:pre-wrap}
+      .toast,.modal-bg,.outbox-pill,#home-outbox-pill{display:none!important}
+    }
 
     /* FALTANTE reason sub-branch */
     .faltante-branch{flex:1}
@@ -369,6 +443,10 @@
       <span class="home-btn-icon">📦</span>
       <div><div class="home-btn-label">Armar Pedido</div><div class="home-btn-sub">Selecciona tu hub y empieza</div></div>
     </button>
+    <button class="home-btn" onclick="openManual()">
+      <span class="home-btn-icon">📖</span>
+      <div><div class="home-btn-label">Manual</div><div class="home-btn-sub">Cómo funciona la app</div></div>
+    </button>
     <button id="home-outbox-pill" class="outbox-pill" style="display:none" onclick="flushOutbox(true)"></button>
   </div>
 </div>
@@ -387,6 +465,7 @@
 
     <div class="coord-section-title" style="margin-top:28px">Inventario — hoy</div>
     <button class="archive-toggle" id="invtoday-toggle" onclick="toggleInvToday()" style="text-align:left;margin:0">⚠️ Ver conflictos y faltantes de hoy</button>
+    <button class="btn btn-outline" style="margin-top:8px;padding:10px 14px;font-size:13px" onclick="downloadFaltantesDelDia()">📭 Faltantes del día (CSV)</button>
     <div id="invtoday-body" style="display:none;margin-top:10px"></div>
 
     <div class="coord-section-title" style="margin-top:28px">🔄 Inventario de cierre</div>
@@ -397,6 +476,15 @@
       </div>
       <button class="btn btn-outline" style="margin-top:10px;padding:12px" onclick="revisarCierre()">Revisar inventario nuevo vs pendientes</button>
       <div id="cierre-result" style="margin-top:12px"></div>
+    </div>
+
+    <div class="coord-section-title" style="margin-top:28px">🖼 Base de imágenes</div>
+    <div class="cierre-box">
+      <div class="cierre-row">
+        <label class="coord-upload-btn">Subir exportación Masterview<input type="file" accept=".csv" onchange="uploadImageDB(this)"></label>
+        <span id="imgdb-status" class="cierre-status">—</span>
+      </div>
+      <div class="cierre-status" style="margin-top:8px;font-weight:400">Semanal, o cuando se reporte un problema de imagen o de código. No hace falta a diario.</div>
     </div>
 
     <div class="coord-section-title" style="margin-top:28px">Armadores</div>
@@ -487,6 +575,10 @@
         <option value="">— Selecciona armador —</option>
       </select>
     </div>
+    <div class="field-group">
+      <button class="pa-toggle" id="pa-toggle" onclick="togglePedidosArmados()">📋 Pedidos armados ▸</button>
+      <div id="pa-list" style="display:none;margin-top:6px"></div>
+    </div>
     <div class="db-status" id="db-status">
       <span class="db-dot loading" id="db-dot"></span>
       <span id="db-label">Cargando base de imágenes…</span>
@@ -504,11 +596,17 @@
     <div class="list-header-row">
       <button class="back-text-btn" onclick="cancelOrBack()" title="Salir">←</button>
       <span class="list-hub" id="list-hub">—</span>
-      <button class="revisar-hdr-chip" id="revisar-hdr-chip" onclick="scrollToRevisar()" style="display:none" title="Faltantes que otro armador sí encontró">🔁 0</button>
-      <button class="finish-hdr-btn" onclick="showLegend()" style="border-color:var(--gray-300);color:var(--gray-600);margin-right:4px" title="Leyenda">❓</button>
-      <button class="finish-hdr-btn" onclick="requestSaveAndExit()" style="border-color:var(--gray-300);color:var(--gray-600);margin-right:4px" title="Guardar y salir">💾</button>
+      <button class="finish-hdr-btn" onclick="showLegend()" style="border-color:var(--gray-300);color:var(--gray-600)" title="Leyenda">❓</button>
+      <button class="finish-hdr-btn" onclick="requestSaveAndExit()" style="border-color:var(--gray-300);color:var(--gray-600)" title="Guardar y salir">💾</button>
+      <button class="revisar-hdr-chip" id="revisar-hdr-chip" onclick="scrollToRevisar()" style="display:none;margin-right:0" title="Faltantes que otro armador sí encontró">🔁 0</button>
+    </div>
+    <div class="list-header-row row2">
+      <span class="list-prog-label" id="list-prog-label" onclick="refreshSemaforo()" style="cursor:pointer" title="Actualizar inventario">0/0</span>
       <button class="finish-hdr-btn" onclick="requestFinish()">Finalizar pedido</button>
-      <span class="list-prog-label" id="list-prog-label" onclick="pollPicks()" style="cursor:pointer" title="Actualizar inventario">0/0</span>
+    </div>
+    <div class="list-filter-seg" id="list-filter-seg">
+      <button data-f="all" class="active" onclick="setListFilter('all')">Todos</button>
+      <button data-f="pending" onclick="setListFilter('pending')">Pendientes</button>
     </div>
     <div class="prog-bar"><div class="prog-fill" id="list-prog-fill" style="width:0%"></div></div>
   </div>
@@ -533,6 +631,7 @@
     <div id="sum-upload-status" class="sum-upload-status"></div>
     <button id="btn-seguir" class="btn btn-outline" onclick="backToListFromSummary()">← Seguir armando</button>
     <button id="btn-terminar" class="btn btn-primary" onclick="finalizeAssembly()">Terminar armado</button>
+    <button id="btn-sum-back" class="btn btn-outline" style="display:none" onclick="closeFinishedSummary()">← Volver</button>
   </div>
 </div>
 
@@ -564,6 +663,17 @@
       <button class="m-cancel" style="flex:none;padding:10px 28px" onclick="closePinModal()">Cancelar</button>
     </div>
   </div>
+</div>
+
+<!-- MANUAL (§8.10) — in-app, collapsible, offline -->
+<div id="screen-manual" class="screen">
+  <div class="coord-header">
+    <button class="back-text-btn" onclick="showScreen(_manualReturn||'home')">←</button>
+    <h2>📖 Manual</h2>
+    <button class="manual-pdf-btn" onclick="printManual()" title="Guardar como PDF">⬇ PDF</button>
+  </div>
+  <div class="manual-print-title">Manual de uso — App Armado CH · Calii · Septiembre 2026</div>
+  <div class="manual-body" id="manual-body"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -663,6 +773,7 @@ async function flushOutbox(manual){
   for(const e of a){
     try{
       if(e.kind==='pick') await pgInsert('picks', JSON.parse(e.body));
+      else if(e.kind==='inventario_dia'){ await sbDelete(e.path).catch(()=>{}); await sbUpload(e.path, e.body, e.contentType||'application/json'); } // delete-then-insert (no anon UPDATE)
       else await sbUpload(e.path, e.body, e.contentType||'text/csv');
       sent++;
       if(e.kind==='report' && e.hub && e.orderDate) clearPartialSave(e.hub, e.orderDate); // now safe
@@ -696,15 +807,27 @@ function startOutboxTimer(){
 window.addEventListener('online', ()=>flushOutbox());
 
 /* ── STATE ── */
-const S = { hub:'', assembler:'', assemblers:[], items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false, _orderLoaded:false, orderDate:'', segments:[],
+const S = { hub:'', assembler:'', assemblers:[], items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false, _orderLoaded:false, _orderStale:false, orderDate:'', segments:[],
   ronda:1, baseDate:'', _r1Armado:null, // §3.5 round 2 (complemento)
   // inventory semáforo (§3.4)
-  _picks:[], _picksMaxTs:'', _lights:{}, _contradicted:{}, _pollTimer:null, _picksReachable:true };
+  _picks:[], _picksMaxTs:'', _picksDay:'', _lights:{}, _contradicted:{}, _pollTimer:null, _picksReachable:true,
+  _invDia:null, _invDiaDay:'' }; // §2 — today's shared inventory baseline (skuKey → {inv,unidad,hub,uploadedAt})
 
 const BC_STATUS  = { PENDING:'pending', SCANNED:'scanned', UNAVAIL:'unavail', WRONGSYS:'wrongsys', NOSYS:'nosys' };
-const ITEM_STATUS = { PENDING:'pending', COMPLETED:'completed', PARTIAL:'partial', NOBC:'nobc', WRONGSYS:'wrongsys', SKIPPED:'skipped', SHORTDATE:'shortdate' };
+// §8.4 — Estado is purely the quantity outcome. NOBC/WRONGSYS are no longer produced (the barcode axis
+// lives in bcStatus + the "Verificación código" column); kept here only so legacy reports/partials don't crash.
+const ITEM_STATUS = { PENDING:'pending', COMPLETED:'completed', SOBRANTE:'sobrante', PARTIAL:'partial', NOBC:'nobc', WRONGSYS:'wrongsys', SKIPPED:'skipped', SHORTDATE:'shortdate' };
 // skipped + shortdate both aggregate as "faltante"; kept distinct for the report and metrics
 const SKIP_STATUSES = [ITEM_STATUS.SKIPPED, ITEM_STATUS.SHORTDATE];
+// quantity outcomes that mean "something was picked, but not the requested amount" (incl. legacy nobc/wrongsys)
+const QTY_ISSUE_STATUSES = [ITEM_STATUS.PARTIAL, ITEM_STATUS.SOBRANTE, ITEM_STATUS.NOBC, ITEM_STATUS.WRONGSYS];
+// §8.4 — the row icon for a quantity outcome. pendingChar lets the summary show ⏳ where the list shows nothing.
+function statusIcon(status, pendingChar=''){
+  const m={ completed:'✅', sobrante:'⬆️', partial:'⬇️', skipped:'❌', shortdate:'📅',
+            nobc:'⚠️', wrongsys:'⚠️', pending:pendingChar };
+  return m[status]!==undefined ? m[status] : '⚠️'; // unknown legacy status → treat as "revisar"
+}
+function isBcException(bcStatus){ return bcStatus===BC_STATUS.UNAVAIL || bcStatus===BC_STATUS.WRONGSYS; }
 
 /* ── TUNABLES (timing metrics — §3.1 / §3.3) ── */
 const IDLE_GAP_MIN   = 5;    // inter-item gaps longer than this (min) are subtracted from minutosActivos
@@ -726,6 +849,7 @@ const FLAG_META = {
   PEDIDO_CHICO:    { icon:'🔹', txt:'Menos de '+FLAG_MIN_SKUS+' SKUs — las tasas son inestables' },
   INCOMPLETO:      { icon:'⏳', txt:'Terminó con productos aún pendientes' },
   REPORTE_DIFERIDO:{ icon:'📶', txt:'Reporte encolado sin conexión y subido después' },
+  PEDIDO_VIEJO:    { icon:'📅', txt:'La solicitud no era del día en que se armó (lista vieja)' },
   SIN_TIEMPO:      { icon:'⛔', txt:'Sin tiempo medible — las columnas de tasa no aplican' }
 };
 const FLAG_ORDER = Object.keys(FLAG_META);
@@ -777,11 +901,13 @@ async function removeAssembler(idx){
   renderAssemblerList();
   await saveAssemblers();
 }
+let _staleAck=false; // §4 — the stale-list warning modal must be acknowledged before Iniciar Armado unlocks
 function updateStartBtn(){
   const needsAssembler=S.assemblers.length>0;
   // Disable start button while a partial is showing — user must choose Continue or Nuevo armado first
   const blockedByPartial=!!_pendingPartial;
-  document.getElementById('start-btn').disabled=blockedByPartial||!(S.hub&&S._orderLoaded&&(!needsAssembler||S.assembler));
+  const blockedByStale=S._orderStale && !_staleAck;
+  document.getElementById('start-btn').disabled=blockedByPartial||blockedByStale||!(S.hub&&S._orderLoaded&&(!needsAssembler||S.assembler));
 }
 function pickAssembler(name){
   S.assembler=name;
@@ -836,7 +962,7 @@ function detectSuspiciousBarcodes(items){
     // it's likely corrupted (a real barcode would be in our catalog)
     if(Object.keys(S.imgDb).length > 0){
       // Flag if barcode not found in imgDb (corrupted values won't match real ones)
-      return !S.imgDb[bc];
+      return !S.imgDb[bcKey(bc)];
     }
     // imgDb not loaded yet — flag by trailing zeros alone
     return true;
@@ -864,16 +990,92 @@ function sortItems(items){
   });
 }
 
-/* ── IMAGE DB ── */
+/* ── IMAGE DB (§5) ── */
+// Header matching for the Masterview export — the barcode column case differs from the order CSV
+// ("Código de Barras" vs "Código de barras") and can't be edited upstream, so normalise in code.
+function normHeader(h){ return String(h||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function pickCol(row, ...names){
+  const want=names.map(normHeader);
+  for(const k of Object.keys(row||{})){ if(want.includes(normHeader(k))) return row[k]; }
+  return undefined;
+}
+// §5 — 162 catalog barcodes carry leading zeros; strip on both build and lookup (zero collisions, verified).
+function bcKey(bc){ const s=String(bc||''); return s.replace(/^0+/,'') || s; }
+// Rebuild a map's numeric (barcode) keys leading-zero-stripped; name keys untouched.
+function normalizeImgDbKeys(db){
+  const out={};
+  for(const k in db){
+    if(/^\d+$/.test(k)){ const s=bcKey(k); if(!(s in out)) out[s]=db[k]; }
+    else out[k]=db[k];
+  }
+  return out;
+}
 async function loadImageDB(){
   setDbStatus('loading','Cargando base de imágenes…');
+  const CK='calii_imgdb_cache';
+  const base=`${SB_URL}/storage/v1/object/public/${BUCKET}/imagedb/`;
+  // 1. Coordinator-published imagedb/latest.json — check a tiny version.txt first, cache the 1.3 MB body
+  try{
+    const ver=(await fetch(base+'version.txt',{cache:'no-store'}).then(r=>{ if(!r.ok) throw 0; return r.text(); })).trim();
+    let cached=null; try{ cached=JSON.parse(localStorage.getItem(CK)||'null'); }catch(_){}
+    let map;
+    if(cached && cached.v===ver && cached.map){ map=cached.map; }
+    else{
+      const j=await fetch(base+'latest.json',{cache:'no-store'}).then(r=>{ if(!r.ok) throw 0; return r.json(); });
+      map=j.map||j;
+      try{ localStorage.setItem(CK, JSON.stringify({v:ver, map})); }catch(_){}
+    }
+    S.imgDb=normalizeImgDbKeys(map);
+    setDbStatus('ok',`✓ Base de imágenes (${Math.round(Object.keys(S.imgDb).length/2).toLocaleString()} productos)`);
+    return;
+  }catch(_){}
+  // 2. Fallback: the file bundled in the repo (the floor, not the source)
   try{
     const res=await fetch('./imagedb.json');
     if(!res.ok) throw new Error('HTTP '+res.status);
-    S.imgDb=await res.json();
-    const n=Object.keys(S.imgDb).length;
-    setDbStatus('ok',`✓ Base de imágenes cargada (${Math.round(n/2).toLocaleString()} productos)`);
-  }catch(e){ setDbStatus('err','⚠ Sin imágenes (imagedb.json no encontrado)'); }
+    S.imgDb=normalizeImgDbKeys(await res.json());
+    setDbStatus('ok',`✓ Base de imágenes incluida (${Math.round(Object.keys(S.imgDb).length/2).toLocaleString()} productos)`);
+  }catch(e){ S.imgDb={}; setDbStatus('err','⚠ Sin imágenes'); }
+}
+// Masterview CSV → { <bcKey|normName>: <Image URL> }
+function masterviewReduce(text){
+  const p=Papa.parse(text,{header:true,dynamicTyping:false,skipEmptyLines:true});
+  const map={};
+  for(const r of p.data){
+    const url=String(pickCol(r,'Image URL')||'').trim();
+    if(!url) continue;
+    const item=String(pickCol(r,'Item')||'').trim();
+    const bc=cleanBC(pickCol(r,'Código de barras')); // normHeader also matches "Código de Barras"
+    if(bc) map[bcKey(bc)]=url;          // last row wins on a duplicated barcode (§5 — pictures only)
+    if(item) map[normName(item)]=url;
+  }
+  return map;
+}
+async function uploadImageDB(input){
+  const file=input.files[0]; if(!file) return;
+  input.value='';
+  const st=document.getElementById('imgdb-status');
+  st.textContent='Procesando…';
+  try{
+    const map=masterviewReduce(await file.text());
+    const count=Object.keys(map).length;
+    if(count<1000) throw new Error('muy pocas claves — ¿es la exportación de Masterview?');
+    const updatedAt=new Date().toISOString();
+    await sbDelete('imagedb/latest.json').catch(()=>{});
+    await sbUpload('imagedb/latest.json', JSON.stringify({updatedAt, count, map}), 'application/json');
+    await sbDelete('imagedb/version.txt').catch(()=>{});
+    await sbUpload('imagedb/version.txt', updatedAt, 'text/plain');
+    st.textContent=`✓ ${count.toLocaleString()} claves · ${new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})}`;
+    toast(`✓ Base de imágenes actualizada (${count.toLocaleString()} claves). Los teléfonos la tomarán al abrir la app.`);
+  }catch(e){ st.textContent='Error'; toast('❌ '+e.message); }
+}
+async function refreshImgDbStatus(){
+  const st=document.getElementById('imgdb-status'); if(!st) return;
+  try{
+    const j=JSON.parse(await sbFetch('imagedb/latest.json'));
+    const d=new Date(j.updatedAt);
+    st.textContent=`Última actualización: ${d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'})} · ${(j.count||Object.keys(j.map||{}).length).toLocaleString()} claves`;
+  }catch(_){ st.textContent='Sin subir — se usa la base incluida en la app'; }
 }
 function setDbStatus(type,msg){
   document.getElementById('db-dot').className='db-dot '+(type==='ok'?'ok':type==='loading'?'loading':'');
@@ -881,11 +1083,16 @@ function setDbStatus(type,msg){
 }
 function getImgUrl(item){
   const bc=cleanBC(item['Código de barras']), name=normName(item['Producto']||'');
-  if(bc&&S.imgDb[bc]) return S.imgDb[bc];
+  const bk=bcKey(bc); // §5 — strip leading zeros to match the catalog
+  if(bk&&S.imgDb[bk]) return S.imgDb[bk];
   if(name&&S.imgDb[name]) return S.imgDb[name];
   const fw=name.split(' ')[0];
   if(fw.length>3&&S.imgDb[fw]) return S.imgDb[fw];
-  for(const k of Object.keys(S.imgDb)){ if(k.length>5&&(name.startsWith(k)||k.startsWith(fw))) return S.imgDb[k]; }
+  // §5 — the prefix fallback: a wrong image is worse than none, so require ≥5 chars before guessing.
+  for(const k of Object.keys(S.imgDb)){
+    if(k.length>5 && name.startsWith(k)) return S.imgDb[k];
+    if(fw.length>=5 && k.length>5 && k.startsWith(fw)) return S.imgDb[k];
+  }
   return null;
 }
 
@@ -967,6 +1174,7 @@ function pickHub(btn, name){
 async function fetchOrderForHub(hub){
   const st=document.getElementById('fetch-status');
   st.className='fetch-status loading'; st.textContent='⏳ Buscando pedido…';
+  S._orderStale=false; _staleAck=false; // fresh load — any prior acknowledgement no longer applies
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>b.disabled=true);
   try{
     // Latest DATE, then prefer that date's complemento (-r2) over the base order (§3.5)
@@ -990,12 +1198,28 @@ async function fetchOrderForHub(hub){
     S.items=sortItems(items);
     S.ronda=isR2?2:1; S.baseDate=latestDate;
     S._r1Armado = isR2 ? (await armadoMapForHub(hub, latestDate)).map : null;
-    st.className='fetch-status ok';
-    st.textContent=isR2 ? `🔄 Complemento del ${latestDate} — ${items.length} productos` : `✓ Cargado el ${uploadDate} — ${items.length} productos`;
+    // §4 — surface a stale list. A file's date IS its upload date; if it isn't today's, the coordinator
+    // didn't upload for this hub today. Never blocks — just makes sure the assembler knows.
+    const stale = !isR2 && uploadDate.slice(0,10) !== todayStr();
+    st.style.cursor=''; st.onclick=null;
+    if(isR2){
+      st.className='fetch-status ok';
+      st.textContent=`🔄 Complemento del ${latestDate} — ${items.length} productos`;
+    } else if(stale){
+      const dd=uploadDate.slice(0,10).split('-').slice(1).reverse().join('/');
+      const days=Math.max(1, Math.round((Date.parse(todayStr())-Date.parse(uploadDate.slice(0,10)))/86400000));
+      st.className='fetch-status warn'; st.style.cursor='pointer'; st.onclick=showStaleWarning;
+      st.textContent=`⚠ Tu solicitud es del ${dd} (${days} día${days>1?'s':''}) — NO es de hoy · toca aquí`;
+      S._orderStale={ hub, dd, days, count:items.length }; // blocks Iniciar Armado until the modal is acknowledged
+    } else {
+      st.className='fetch-status ok'; st.style.cursor=''; st.onclick=null;
+      st.textContent=`✓ Cargado el ${uploadDate} — ${items.length} productos`;
+    }
     S._orderLoaded=true; S.orderDate=uploadDate;
     // §3.6: cache the parsed order so a reload in a dead zone isn't fatal
     try{ localStorage.setItem('calii_order_cache_'+HUB_SLUG[hub], JSON.stringify({orderDate:uploadDate, ronda:S.ronda, baseDate:latestDate, items:S.items})); }catch(_){}
     await finishOrderLoad(hub);
+    if(S._orderStale) showStaleWarning(); // §4 — blocking: must acknowledge before starting
   }catch(e){
     // §3.6: fall back to the last cached order for this hub
     const cached=(()=>{ try{ return JSON.parse(localStorage.getItem('calii_order_cache_'+HUB_SLUG[hub])||'null'); }catch(_){ return null; } })();
@@ -1015,6 +1239,18 @@ async function fetchOrderForHub(hub){
       if(b.textContent.trim()===hub) b.classList.add('selected');
     });
   }
+}
+
+// §4 — blocking modal for a stale list. Iniciar Armado stays disabled until "Entendido" is tapped.
+function showStaleWarning(){
+  const s=S._orderStale; if(!s || typeof s!=='object') return;
+  showInfoModal('⚠ Esta lista NO es de hoy',
+`El pedido cargado para ${s.hub} es del ${s.dd} (${s.days} día${s.days>1?'s':''}). El coordinador no ha subido una lista nueva para este hub hoy.
+
+Si debería haber una de hoy, avísale antes de empezar.
+
+Si vas a armar esta lista de todos modos, toca "Entendido".`,
+    { okLabel:'Entendido — armar esta lista', onOk:()=>{ _staleAck=true; updateStartBtn(); } });
 }
 
 // Shared tail of a successful/ cached order load: assembler dropdown, start button, partial check
@@ -1044,6 +1280,7 @@ async function loadCoordinatorScreen(){
   _cierreCache=null;
   document.getElementById('cierre-result').innerHTML='';
   refreshCierreStatus();
+  refreshImgDbStatus();
   flushOutbox(); // §3.6 — a good moment to drain any queued uploads
 
   // Load assembler list
@@ -1077,9 +1314,12 @@ async function loadCoordinatorScreen(){
     // counts remembered from this device's last upload (falls back to the date alone)
     let sub='';
     try{ const c=JSON.parse(localStorage.getItem('calii_ordercount_'+HUB_SLUG[hub])||'null'); if(c&&c.date===dateLabel) sub=` · ${c.activos} activos${c.reserva?` · ${c.reserva} reserva`:''}`; }catch(_){}
+    // §4 — amber the badge when this hub's latest order isn't today's (coordinator didn't upload for it today)
+    const stale = loaded && dateLabel.slice(0,10) !== todayStr();
+    const badgeCls = !loaded ? 'empty' : (stale ? 'stale' : 'loaded');
     return `<div class="coord-hub-row">
       <span class="coord-hub-name">${escH(hub)}${sub?`<span class="coord-hub-sub">${escH(sub)}</span>`:''}</span>
-      <span class="coord-hub-badge ${loaded?'loaded':'empty'}" id="badge-${HUB_SLUG[hub]}">${loaded?`✓ ${escH(dateLabel)}`:'Sin pedido'}</span>
+      <span class="coord-hub-badge ${badgeCls}" id="badge-${HUB_SLUG[hub]}">${loaded?`${stale?'⚠':'✓'} ${escH(dateLabel)}`:'Sin pedido'}</span>
       <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
       ${noSurtidoBtn}${clearBtn}
     </div>`;
@@ -1221,6 +1461,9 @@ async function doUpload(hub, text, items, badge, fields){
     const pcBody=JSON.stringify({orderDate:od, hub, uploadedAt:new Date().toISOString(), fields:fields||[], rows:items});
     sbUploadQueued(`pedido_completo/${HUB_SLUG[hub]}/${od}.json`, pcBody, {kind:'pedido_completo', contentType:'application/json'})
       .catch(e=>console.warn('pedido_completo:',e));
+    // §2 — merge this hub's rows into today's shared inventory baseline (most-recent-upload-wins per SKU)
+    mergeInventarioDia(hub, items).catch(e=>console.warn('inventario_dia:',e));
+    checkSalidaEnvio(items); // §2a — non-blocking warning if the "outflow not discounted" premise looks broken
     const reserva=items.filter(r=>!((parseFloat(r['Inventario hub saliente'])||0)>0)).length;
     const activos=items.length-reserva;
     try{ localStorage.setItem('calii_ordercount_'+HUB_SLUG[hub], JSON.stringify({date:od, activos, reserva})); }catch(_){}
@@ -1230,6 +1473,42 @@ async function doUpload(hub, text, items, badge, fields){
     if(badge){ badge.className='coord-hub-badge empty'; badge.textContent='Error'; }
     toast('❌ Error al subir: '+e.message);
   }
+}
+
+// §2 — today's shared inventory baseline. Every hub's upload merges into one file; per SKU, the entry
+// from the LATEST upload wins (a fresher snapshot is never worse — see §2). Read-merge-write; the race
+// between two near-simultaneous uploads is tolerable (loser is one hub's rows for one day, re-uploadable).
+async function mergeInventarioDia(hub, items){
+  const day=todayStr(), path=`inventario_dia/${day}.json`, uploadedAt=new Date().toISOString();
+  let skus={};
+  try{ const cur=JSON.parse(await sbFetch(path)); if(cur && cur.skus) skus=cur.skus; }catch(_){}
+  (items||[]).forEach(item=>{
+    const raw=String(item['Inventario hub saliente']||'').trim(); if(raw==='') return;
+    const n=Number(raw); if(isNaN(n)) return;
+    const k=skuKeyOf(item), unidad=itemUnit(item), prev=skus[k];
+    if(prev && prev.unidad && prev.unidad!==unidad){ console.warn('inventario_dia: unidad distinta para',k,'— no se sobrescribe'); return; }
+    if(!prev || uploadedAt>String(prev.uploadedAt||'')) skus[k]={inv:n, unidad, hub, uploadedAt};
+  });
+  const body=JSON.stringify({date:day, updatedAt:uploadedAt, skus});
+  const queue=()=>{ outboxAdd({kind:'inventario_dia', path, body, contentType:'application/json'}); startOutboxTimer(); return 'queued'; };
+  try{ await sbUpload(path, body, 'application/json'); return 'uploaded'; } // first upload of the day
+  catch(e){
+    if(isNetErr(e)) return queue();
+    // hard error = file already exists (no anon UPDATE policy) → delete then re-insert (assemblers.json pattern)
+    await sbDelete(path).catch(()=>{});
+    try{ await sbUpload(path, body, 'application/json'); return 'uploaded'; }
+    catch(e2){ if(isNetErr(e2)) return queue(); throw e2; }
+  }
+}
+// §2a — the semáforo assumes assembly outflow (Salida/Envío) is NOT yet in the snapshot. If an order arrives
+// with either column non-zero, that premise is dead — say so (non-blocking; the upload already happened).
+function checkSalidaEnvio(items){
+  const n=(items||[]).filter(r=>{
+    const s=parseFloat(r['Salida (kg/pz)']), e=parseFloat(r['Envío - Solicitud (#)']);
+    return (!isNaN(s)&&s!==0) || (!isNaN(e)&&e!==0);
+  }).length;
+  if(n) showInfoModal('⚠ Revisar este pedido',
+    `Este pedido trae Salida/Envío con valores en ${n} SKU. El semáforo de inventario asume que las salidas de armado todavía no están descontadas del sistema. Si eso cambió, avisa antes de confiar en el semáforo.`);
 }
 
 async function checkPartialThenUpload(hub, text, items, badge, fields){
@@ -1300,18 +1579,26 @@ function deleteReport(path, hub, label){
     }
   );
 }
-function showInfoModal(title, body){
+// opts: { extra:{label,fn}, onOk, okLabel } — all optional
+function showInfoModal(title, body, opts){
+  opts=opts||{};
   document.getElementById('m-title').textContent=title;
   document.getElementById('m-body').textContent=body;
-  const ok=document.getElementById('m-ok'); ok.textContent='Entendido'; ok.className='m-ok'; ok.onclick=closeModal;
-  document.getElementById('m-cancel').style.display='none';
+  const ok=document.getElementById('m-ok');
+  ok.textContent=opts.okLabel||'Entendido'; ok.className='m-ok';
+  ok.onclick=()=>{ closeModal(); if(opts.onOk) opts.onOk(); };
+  const cancel=document.getElementById('m-cancel');
+  if(opts.extra){ cancel.style.display=''; cancel.textContent=opts.extra.label; cancel.onclick=()=>{ closeModal(); opts.extra.fn(); }; }
+  else { cancel.style.display='none'; cancel.textContent='Cancelar'; cancel.onclick=closeModal; }
   document.getElementById('modal-bg').classList.add('open');
 }
 function showLegend(){
   showInfoModal('Leyenda de estados',
-`✅  Completo — cantidad dentro del rango, código OK
+`✅  Completo — se armó la cantidad solicitada
 
-⚠️  Parcial — cantidad diferente a la solicitada, o con problema en código
+⬆️  Sobrante — se armó de más
+
+⬇️  Parcial — se armó de menos (pero algo se armó)
 
 ❌  Faltante — producto no se encontró (0 armado)
 
@@ -1321,10 +1608,116 @@ Sin ícono — Pendiente, aún sin confirmar
 
 ── Códigos de barras ──
 
+⚠  (junto al ícono) — revisar el código de barras de esa fila
 ✓ Verificado — escaneado y coincide con sistema
 ⚠ No puedo escanear — código ilegible físicamente
 ⚠ Discrepancia — código físico diferente al del sistema
-📭 Sin código — producto sin código registrado`);
+📭 Sin código — producto sin código registrado
+
+¿Cómo funciona el semáforo? → Manual`,
+  { extra:{ label:'📖 Manual', fn:()=>openManual('4') } });
+}
+
+/* ── §8.10 — IN-APP MANUAL (fetched from manual/manual-armado-ch.md, SW-cached for offline) ── */
+let _manualReturn='home', _manualRendered=false;
+function _mdInline(s){
+  return escH(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g,'$1<em>$2</em>');
+}
+function _mdToHtml(md){
+  const L=md.split('\n'); let out='', i=0, p=[];
+  const flush=()=>{ if(p.length){ out+=`<p>${_mdInline(p.join(' '))}</p>`; p=[]; } };
+  while(i<L.length){
+    const ln=L[i];
+    if(/^```/.test(ln)){ flush(); i++; const c=[]; while(i<L.length&&!/^```/.test(L[i])){ c.push(L[i]); i++; } i++; out+=`<pre>${escH(c.join('\n'))}</pre>`; continue; }
+    if(/^\|/.test(ln) && i+1<L.length && /^\|[\s:|-]+\|?\s*$/.test(L[i+1])){
+      flush();
+      const cells=r=>r.replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+      const head=cells(ln); i+=2; const body=[];
+      while(i<L.length && /^\|/.test(L[i])){ body.push(cells(L[i])); i++; }
+      out+=`<div class="mtable"><table><thead><tr>${head.map(c=>`<th>${_mdInline(c)}</th>`).join('')}</tr></thead><tbody>${body.map(r=>`<tr>${r.map(c=>`<td>${_mdInline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      continue;
+    }
+    let m;
+    if(m=ln.match(/^####\s+(.*)/)){ flush(); out+=`<h4>${_mdInline(m[1])}</h4>`; i++; continue; }
+    if(m=ln.match(/^###\s+(.*)/)){ flush(); out+=`<h3>${_mdInline(m[1])}</h3>`; i++; continue; }
+    if(/^---\s*$/.test(ln)){ flush(); i++; continue; }
+    if(/^>\s?/.test(ln)){ flush(); const q=[]; while(i<L.length&&/^>\s?/.test(L[i])){ q.push(_mdInline(L[i].replace(/^>\s?/,''))); i++; } out+=`<blockquote>${q.join('<br>')}</blockquote>`; continue; }
+    if(/^\s*[-*]\s+/.test(ln)){
+      flush(); const it=[];
+      while(i<L.length && /^\s*[-*]\s+/.test(L[i])){
+        let t=L[i].replace(/^\s*[-*]\s+/,''); i++;
+        while(i<L.length && /^\s{2,}\S/.test(L[i]) && !/^\s*[-*]\s/.test(L[i]) && !/^\s*\d+\.\s/.test(L[i])){ t+=' '+L[i].trim(); i++; }
+        it.push(t);
+      }
+      out+=`<ul>${it.map(x=>`<li>${_mdInline(x)}</li>`).join('')}</ul>`; continue;
+    }
+    if(/^\s*\d+\.\s+/.test(ln)){
+      flush(); const it=[];
+      while(i<L.length && /^\s*\d+\.\s+/.test(L[i])){
+        let t=L[i].replace(/^\s*\d+\.\s+/,''); i++;
+        while(i<L.length && /^\s{2,}\S/.test(L[i]) && !/^\s*\d+\.\s/.test(L[i]) && !/^\s*[-*]\s/.test(L[i])){ t+=' '+L[i].trim(); i++; }
+        it.push(t);
+      }
+      out+=`<ol>${it.map(x=>`<li>${_mdInline(x)}</li>`).join('')}</ol>`; continue;
+    }
+    if(/^\s*$/.test(ln)){ flush(); i++; continue; }
+    p.push(ln.trim()); i++;
+  }
+  flush();
+  return out;
+}
+// The manual is a single source file — manual/manual-armado-ch.md. It is fetched at runtime and cached
+// by the service worker (it's in sw.js's SHELL), so editing the manual = edit the .md, commit, push.
+let _manualMd=null;
+async function fetchManualMd(){
+  if(_manualMd!=null) return _manualMd;
+  try{ _manualMd=await fetch('./manual/manual-armado-ch.md',{cache:'no-store'}).then(r=>{ if(!r.ok) throw 0; return r.text(); }); }
+  catch(_){ _manualMd=''; }
+  return _manualMd;
+}
+async function renderManual(){
+  if(_manualRendered) return;
+  const box=document.getElementById('manual-body');
+  box.innerHTML='<div class="coord-empty" style="padding:24px">Cargando manual…</div>';
+  const src=await fetchManualMd();
+  if(!src){ box.innerHTML='<div class="coord-empty" style="padding:24px">Manual no disponible. Ábrelo una vez con internet.</div>'; return; }
+  const parts=src.split(/\n(?=## )/);
+  let html='';
+  parts.forEach((part,idx)=>{
+    const m=part.match(/^##\s+(.+)/);
+    if(!m) return; // skip the title preamble
+    const title=m[1].trim();
+    if(/^índice$/i.test(title)) return; // the collapsibles are the navigation
+    const body=part.replace(/^##\s+.+\n?/,'');
+    const num=(title.match(/^(\d+)\./)||[])[1];
+    const open = num==='1' ? ' open' : '';
+    html+=`<details class="manual-sec"${open} id="man-${num||idx}"><summary>${escH(title)}</summary><div class="manual-sec-body">${_mdToHtml(body)}</div></details>`;
+  });
+  box.innerHTML=html || '<div class="coord-empty">Manual no disponible.</div>';
+  _manualRendered=true;
+}
+async function openManual(sectionNum){
+  const cur=document.querySelector('.screen.active');
+  _manualReturn = (cur && cur.id==='screen-list') ? 'list' : 'home';
+  showScreen('manual');
+  await renderManual();
+  if(sectionNum){
+    const el=document.getElementById('man-'+sectionNum);
+    if(el){ el.open=true; setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'start'}), 80); }
+  }
+}
+// No server-side PDF: expand every section and hand it to the browser's print → "Guardar como PDF".
+async function printManual(){
+  await renderManual();
+  document.querySelectorAll('.manual-sec').forEach(d=>{ d.open=true; });
+  const t=document.title; document.title='Manual — Armado CH';
+  const restore=()=>{ document.title=t; window.removeEventListener('afterprint',restore); };
+  window.addEventListener('afterprint',restore);
+  setTimeout(restore, 60000);
+  window.print();
 }
 
 /* ── MULTI-ASSEMBLER SLUG ── */
@@ -1359,10 +1752,10 @@ function startAssembly(){
       openedAt:null, firstOpenedAt:null, touches:0, handleSec:null, bcAttempts:0 };
   });
   S.segments=[newSegment()];
-  S._picks=[]; S._picksMaxTs=''; S._lights={}; S._contradicted={}; S._picksReachable=true; _revisarOpen=false;
+  S._picks=[]; S._picksMaxTs=''; S._picksDay=''; S._lights={}; S._contradicted={}; S._picksReachable=true; _revisarRepartitionPending=false; _listFilter='all';
   _expandedIdx=-1;
   S.listScrollY=0; buildList(); showScreen('list');
-  loadPicks().then(()=>{ renderList(); }); startPicksPoll();
+  loadPicks().then(()=>{ renderList(); }); loadInvDia(); startPicksPoll();
 }
 
 /* ── TIMING SEGMENTS (§3.1) — one open segment per working session; the overnight gap between
@@ -1391,8 +1784,10 @@ function itemRowHtml(item,i){
   const expChip=minExpDate?`<span class="row-exp-chip">📅 ${escH(minExpDM(minExpDate))}</span>`:'';
   const lt=activeLight(i);
   const lightChip=lt?`<span class="light-chip light-${lt.color}">${lt.color==='rojo'?'🔴':'🟡'}</span>`:'';
-  const revChip=S._contradicted[i]?`<span class="revisar-chip">🔁</span>`:'';
-  const icon={[ITEM_STATUS.COMPLETED]:'✅',[ITEM_STATUS.PARTIAL]:'⚠️',[ITEM_STATUS.SKIPPED]:'❌',[ITEM_STATUS.SHORTDATE]:'📅',[ITEM_STATUS.NOBC]:'⚠️',[ITEM_STATUS.PENDING]:''}[result.status]||'';
+  const revInfo=contradictedInfo(i);
+  const revChip=revInfo?`<span class="revisar-chip" title="${escH(revInfo.short)}">🔁</span>`:(S._contradicted[i]?`<span class="revisar-chip">🔁</span>`:'');
+  const icon=statusIcon(result.status);
+  const bcWarn=(result.status!==ITEM_STATUS.PENDING && isBcException(result.bcStatus))?'<span class="row-bc-warn" title="Revisar código de barras">⚠</span>':'';
   const thumb=imgUrl?`<img src="${escH(imgUrl)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'row-thumb-ph',textContent:'📦'}))">` :`<span class="row-thumb-ph">📦</span>`;
   return `<div class="item-row status-${result.status}" id="item-row-${i}" onclick="openDetail(${i})">
       <div class="row-thumb">${thumb}</div>
@@ -1400,7 +1795,7 @@ function itemRowHtml(item,i){
         <div class="row-name">${escH(name)}</div>
         <div class="row-meta"><span class="row-pos">${escH(pos)}</span><span class="row-qty">${reqQ} ${escH(unit)}</span>${expChip}${lightChip}${revChip}${!bc?'<span style="font-size:11px;color:var(--gray-400)">sin código</span>':''}</div>
       </div>
-      <div class="row-right"><span class="row-status">${icon}</span><span class="row-chevron">›</span></div>
+      <div class="row-right"><span class="row-status">${icon}${bcWarn}</span><span class="row-chevron">›</span></div>
     </div>
     <div id="detail-panel-${i}" class="item-expand-panel" style="display:none"></div>`;
 }
@@ -1409,23 +1804,38 @@ function renderList(){
   const pct=total?Math.round(done/total*100):0;
   document.getElementById('list-prog-fill').style.width=pct+'%';
   document.getElementById('list-prog-label').textContent=`${done}/${total}`;
-  // Contradicted skips collect in a collapsed section at the bottom — pending rows never move (§3.4)
+  // Contradicted skips collect in a section at the bottom — always expanded, pending rows never move (§3.4)
   const main=[], revisar=[];
   S.items.forEach((item,i)=>{ (S._contradicted[i]?revisar:main).push(itemRowHtml(item,i)); });
   let html=main.join('');
+  html+=`<div class="pending-empty" id="pending-empty" style="display:none">✓ No quedan pendientes<button class="pending-empty-btn" onclick="setListFilter('all')">Ver todos</button></div>`;
   if(revisar.length){
     html+=`<div class="revisar-section" id="revisar-section">
-      <button class="revisar-head" onclick="toggleRevisar()">🔁 ${revisar.length} por revisar <span id="revisar-caret">${_revisarOpen?'▾':'▸'}</span></button>
-      <div id="revisar-body" style="display:${_revisarOpen?'block':'none'}">${revisar.join('')}</div>
+      <div class="revisar-head">🔁 ${revisar.length} por revisar</div>
+      <div id="revisar-body">${revisar.join('')}</div>
     </div>`;
   }
   document.getElementById('list-body').innerHTML=html;
   updateRevisarHeaderChip();
+  applyListFilter();
+}
+let _listFilter='all'; // 'all' | 'pending' — per-session view filter (§8.9), not persisted
+function setListFilter(f){ _listFilter=(f==='pending'?'pending':'all'); applyListFilter(); }
+function applyListFilter(){
+  const body=document.getElementById('list-body');
+  if(body) body.classList.toggle('filter-pending', _listFilter==='pending');
+  document.querySelectorAll('#list-filter-seg button').forEach(b=>b.classList.toggle('active', b.dataset.f===_listFilter));
+  const empty=document.getElementById('pending-empty');
+  if(empty){
+    const anyPending=S.results.some(r=>r&&r.status===ITEM_STATUS.PENDING);
+    empty.style.display=(_listFilter==='pending'&&!anyPending)?'flex':'none';
+  }
 }
 function updateListProgress(){
   const total=S.items.length, done=S.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
   document.getElementById('list-prog-fill').style.width=(total?Math.round(done/total*100):0)+'%';
   document.getElementById('list-prog-label').textContent=`${done}/${total}`;
+  applyListFilter(); // a just-resolved row leaves the filtered view; refresh the empty-state (§8.9)
 }
 
 /* ── INLINE ACCORDION DETAIL ── */
@@ -1450,7 +1860,9 @@ function openDetail(idx){
   panel.style.display='block';
   if(row) row.classList.add('expanded');
   setTimeout(()=>{
-    panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+    // Scroll the ROW to the top (below the sticky header via its scroll-margin-top), not the panel —
+    // block:'nearest' on a tall panel lands on the panel's bottom edge and hides the product name (§8.11c).
+    (row||panel).scrollIntoView({behavior:'smooth',block:'start'});
     const result=S.results[idx], bc=cleanBC(S.items[idx]['Código de barras']);
     (result.bcStatus===BC_STATUS.PENDING&&bc?document.getElementById('bc-field'):document.getElementById('qty-field'))?.focus();
   },120);
@@ -1463,6 +1875,8 @@ function collapseDetail(){
   if(panel){ panel.style.display='none'; panel.innerHTML=''; }
   if(row) row.classList.remove('expanded');
   _expandedIdx=-1;
+  // A poll found a new 🔁 while this panel was open — now safe to re-partition the list
+  if(_revisarRepartitionPending){ _revisarRepartitionPending=false; renderList(); }
 }
 
 function buildDetailPanelHtml(idx){
@@ -1472,6 +1886,7 @@ function buildDetailPanelHtml(idx){
   const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
   const imgUrl=getImgUrl(item);
   const pos=String(item['Posición armado']||'—').replace(/[\[\]]/g,'').trim();
+  const name=item['Producto']||'Sin nombre';
   const inventory=String(item['Inventario hub saliente']||'').trim();
   const minExpDate=computeMinExpDate(item);
   const savedPicked=result.picked!==null?result.picked:'';
@@ -1487,7 +1902,7 @@ function buildDetailPanelHtml(idx){
   } else if(result.bcStatus===BC_STATUS.SCANNED){
     bcHtml=`<div class="d-section"><div class="d-section-title">🔍 Código de barras <span class="ok-badge">✓ Verificado</span></div><div class="nosys-pill" style="border:1.5px solid #00c3b3;background:#E0F7F5;color:#007a6e">✅ Código verificado exitosamente</div><button class="nobc-btn" onclick="resetBC()">Volver a escanear</button></div>`;
   } else {
-    bcHtml=`<div class="d-section"><div class="d-section-title">🔍 Código de barras <span class="req-badge">Requerido</span></div><div class="bc-row"><input id="bc-field" class="bc-input" type="text" inputmode="text" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Escanear código…" oninput="onBCInput()" onkeydown="onBCKeydown(event)"><span class="bc-icon" id="bc-icon">⬜</span></div><div class="bc-msg" id="bc-msg"></div><div class="bc-options"><button class="bc-opt-btn" onclick="markBCUnavail()">No puedo escanear</button><button class="bc-opt-btn wrongsys" onclick="markBCWrongSys()">Código equivocado en sistema</button></div></div>`;
+    bcHtml=`<div class="d-section"><div class="d-section-title">🔍 Código de barras <span class="req-badge">Requerido</span></div><div class="bc-row"><input id="bc-field" class="bc-input" type="text" inputmode="none" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Escanear código…" oninput="onBCInput()" onkeydown="onBCKeydown(event)"><span class="bc-icon" id="bc-icon">⬜</span></div><div class="bc-msg" id="bc-msg"></div><div class="bc-options"><button class="bc-opt-btn" onclick="markBCUnavail()">No puedo escanear</button><button class="bc-opt-btn wrongsys" onclick="markBCWrongSys()">Código equivocado en sistema</button></div></div>`;
   }
 
   // Image
@@ -1505,7 +1920,13 @@ function buildDetailPanelHtml(idx){
   // Inventory semáforo — shows the arithmetic so it earns trust; green renders nothing (§3.4)
   const semBlock=semBlockHtml(idx);
 
-  return `${imgHtml}
+  // §8.3 — a 🔁 row names who found it, so the assembler can ask before leaving it as faltante
+  const contra=contradictedInfo(idx);
+  const contraNote=contra?`<div class="contradicted-note">${escH(contra.sentence)}${contra.list?`<div class="contradicted-note-list">${escH(contra.list)}</div>`:''}</div>`:'';
+
+  return `<div class="d-panel-title"><span class="d-panel-title-name">${escH(name)}</span><span class="d-panel-title-pos">${escH(pos)}</span></div>
+    ${contraNote}
+    ${imgHtml}
     <div class="d-info" style="padding:12px 16px 8px">
       <div class="d-tags" style="margin-bottom:8px">
         <div class="d-tag"><span class="d-tag-k">Posición</span><span class="d-tag-v mono">${escH(pos)}</span></div>
@@ -1533,10 +1954,14 @@ function buildDetailPanelHtml(idx){
 function semBlockHtml(idx){
   const lt=activeLight(idx);
   if(!lt) return '';
+  // §2e — when the number came from this file's own row (no same-day baseline), say which day it's from
+  const invLbl = (lt.invFuente==='archivo' && S.orderDate)
+    ? `Inventario CH ${lt.inventario} (archivo del ${String(S.orderDate).slice(0,10).split('-').slice(1).reverse().join('/')})`
+    : `Inventario CH ${lt.inventario}`;
   if(lt.color==='rojo'){
     return `<div class="sem-block sem-rojo">
       <div class="sem-main">🔴 Ya no hay — no lo busques</div>
-      <div class="sem-sub">Inventario CH ${lt.inventario} · otros hubs ya armaron ${lt.consumido} hoy${lt.hora?' · '+lt.hora:''}</div>
+      <div class="sem-sub">${invLbl} · otros hubs ya armaron ${lt.consumido} hoy${lt.hora?' · '+lt.hora:''}</div>
     </div>`;
   }
   if(lt.basis==='testimonio'){
@@ -1545,9 +1970,11 @@ function semBlockHtml(idx){
       <div class="sem-sub">Búscalo, y si no está a la vista marca faltante y sigue</div>
     </div>`;
   }
+  const ambNote = lt.invAmbiguo ? `<div class="sem-sub">El inventario se actualizó después de que empezó el armado hoy — puede estar contando lo ya armado.</div>` : '';
   return `<div class="sem-block sem-amarillo">
       <div class="sem-main">🟡 Puede que ya no haya</div>
-      <div class="sem-sub">Inventario CH ${lt.inventario} · otros hubs ya armaron ${lt.consumido} hoy · pediste ${lt.solicitado}</div>
+      <div class="sem-sub">${invLbl} · otros hubs ya armaron ${lt.consumido} hoy · pediste ${lt.solicitado}</div>
+      ${ambNote}
       <div class="sem-sub">Búscalo, y si no está a la vista marca faltante y sigue</div>
     </div>`;
 }
@@ -1640,12 +2067,14 @@ function confirmItem(){
   result.handleSec=computeHandleSec(result);
   result.picked=picked;
   const lt0=S._lights[idx]; result.luzAlSkip=lt0?lt0.color:'sin_dato'; // light shown at the moment of action (§3.4)
+  result._invAmbiguo=!!(lt0&&lt0.invAmbiguo); // §2b — measure how often the ambiguous-snapshot cap fires
+  // §8.4 — Estado is purely the quantity outcome; the barcode axis is bcStatus + the CSV's "Verificación código".
+  // Pz reqQ is Math.ceil(...) and assemblers enter whole pieces, so ±0.5 here is equivalent to 0 — no grace band.
   const tol=unit==='Kg'?0.05:0.5;
-  if(picked===0) result.status=ITEM_STATUS.SKIPPED;
-  else if(result.bcStatus===BC_STATUS.UNAVAIL) result.status=ITEM_STATUS.NOBC;
-  else if(result.bcStatus===BC_STATUS.WRONGSYS) result.status=ITEM_STATUS.WRONGSYS;
-  else if(Math.abs(picked-reqQ)<=tol) result.status=ITEM_STATUS.COMPLETED;
-  else result.status=ITEM_STATUS.PARTIAL;
+  if(picked===0)                       result.status=ITEM_STATUS.SKIPPED;
+  else if(Math.abs(picked-reqQ)<=tol)  result.status=ITEM_STATUS.COMPLETED;
+  else if(picked>reqQ)                 result.status=ITEM_STATUS.SOBRANTE;
+  else                                 result.status=ITEM_STATUS.PARTIAL;
   collapseDetail(); updateListRow(idx); updateListProgress();
   savePartialProgress();
   recordPick(idx); pollPicks(); // log this pick, then immediately refresh from others
@@ -1655,6 +2084,7 @@ function confirmItem(){
 function markFaltante(reason){
   const idx=S.activeIdx, r=S.results[idx];
   const lt0=S._lights[idx]; r.luzAlSkip=lt0?lt0.color:'sin_dato'; // light shown at the moment of the skip
+  r._invAmbiguo=!!(lt0&&lt0.invAmbiguo); // §2b
   r.picked=0; r.bcStatus=BC_STATUS.PENDING;
   r.status=reason==='shortdate'?ITEM_STATUS.SHORTDATE:ITEM_STATUS.SKIPPED;
   r.confirmedAt=new Date();
@@ -1674,8 +2104,9 @@ function advanceToNextPending(fromIdx){
 function updateListRow(idx){
   const row=document.getElementById(`item-row-${idx}`);
   if(row){
-    const r=S.results[idx], icon={completed:'✅',partial:'⚠️',skipped:'❌',shortdate:'📅',nobc:'⚠️',wrongsys:'⚠️',pending:''}[r.status]||'';
-    const sd=row.querySelector('.row-status'); if(sd) sd.textContent=icon;
+    const r=S.results[idx];
+    const bcWarn=(r.status!==ITEM_STATUS.PENDING && isBcException(r.bcStatus))?'<span class="row-bc-warn" title="Revisar código de barras">⚠</span>':'';
+    const sd=row.querySelector('.row-status'); if(sd) sd.innerHTML=statusIcon(r.status)+bcWarn;
     row.className=`item-row status-${r.status}`;
   }
 }
@@ -1689,36 +2120,70 @@ function requestFinish(){
 }
 let _pendingReport=null; // captured assembly state, awaiting "Terminar armado"
 
+// §8.6a/b — one normalized summary row. Fed from live S.items/S.results or from a parsed report CSV.
+function summaryRowHtml(r){
+  const icon=statusIcon(r.status,'⏳');
+  const bcNote=r.bcStatus===BC_STATUS.UNAVAIL?' · ⚠ código ilegible':r.bcStatus===BC_STATUS.WRONGSYS?' · ⚠ código discrepa':'';
+  const skipNote=r.status===ITEM_STATUS.SHORTDATE?' · 📅 fecha corta':'';
+  const faltaN=(r.pick!=null&&r.req!=null)?(r.req-r.pick):null;
+  const falta=(faltaN!=null&&faltaN>0)?(r.unit==='Kg'?faltaN.toFixed(2):String(Math.round(faltaN))):'';
+  const armStr=r.pick!=null?r.pickStr:'—';
+  const idPart=r.bc?`<span class="sum-bc">${escH(r.bc)}</span>`:'sin código'; // barcode as the row identifier for registration
+  return `<div class="sum-row">
+      <span class="sum-icon">${icon}</span>
+      <div class="sum-detail">
+        <div class="sum-name">${escH(r.producto)}</div>
+        <div class="sum-qty">${r.pos?escH(r.pos)+' · ':''}${idPart}${falta?` · Falta <b>${escH(falta)}</b>`:''}${bcNote}${skipNote}</div>
+      </div>
+      <span class="sum-armado${r.pick===0?' zero':''}">${escH(armStr)}<span class="sum-armado-u">${escH(r.unit)}</span></span>
+    </div>`;
+}
+// Fill the summary screen from a normalized row list. mode 'readonly' hides the live-assembly actions.
+function renderSummaryBody(rows, metaLine, mode){
+  const total=rows.length;
+  const ok=rows.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
+  const partial=rows.filter(r=>QTY_ISSUE_STATUSES.includes(r.status)).length;
+  const skipped=rows.filter(r=>SKIP_STATUSES.includes(r.status)).length;
+  const pending=rows.filter(r=>r.status===ITEM_STATUS.PENDING).length;
+  document.getElementById('sum-check').textContent = pending>0 ? '📋' : '✅';
+  document.getElementById('sum-title').textContent = pending>0 ? `Resumen — ${pending} sin armar` : 'Pedido completado';
+  document.getElementById('sum-hub-p').textContent=metaLine;
+  document.getElementById('st-total').textContent=total;
+  document.getElementById('st-ok').textContent=ok;
+  document.getElementById('st-part').textContent=partial;
+  document.getElementById('st-skip').textContent=skipped;
+  document.getElementById('sum-list').innerHTML=rows.map(summaryRowHtml).join('');
+  const ro=mode==='readonly';
+  document.getElementById('btn-seguir').style.display=ro?'none':'';
+  document.getElementById('btn-terminar').style.display=ro?'none':'';
+  document.getElementById('btn-sum-back').style.display=ro?'':'none';
+  if(ro){ const s=document.getElementById('sum-upload-status'); s.textContent=''; s.className='sum-upload-status'; }
+}
+// live S.results row → normalized summary row
+function liveSummaryRow(item, r){
+  const unit=item['Kg/Pz']||'Pz', rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
+  const req=unit==='Kg'?+rawQ.toFixed(2):Math.ceil(rawQ);
+  const pick=r.picked!==null?(unit==='Kg'?+Number(r.picked).toFixed(2):Math.round(r.picked)):null;
+  return { producto:item['Producto']||'', unit,
+    reqStr:unit==='Kg'?req.toFixed(2):String(req), req,
+    pickStr:pick!=null?(unit==='Kg'?pick.toFixed(2):String(pick)):'—', pick,
+    status:r.status, bcStatus:r.bcStatus, bc:cleanBC(item['Código de barras']),
+    pos:String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim() };
+}
+
 function showSummary(){
   // Close the current timing segment and capture state — the upload only fires on "Terminar armado"
   closeOpenSegment();
   stopPicksPoll();
   const hub=S.hub, assembler=S.assembler, items=S.items, results=S.results, orderDate=S.orderDate, segments=S.segments.slice();
   const ronda=S.ronda, r1Armado=S._r1Armado;
-  const total=items.length;
-  const ok=results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
-  const partial=results.filter(r=>[ITEM_STATUS.PARTIAL,ITEM_STATUS.NOBC,ITEM_STATUS.WRONGSYS].includes(r.status)).length;
-  const skipped=results.filter(r=>SKIP_STATUSES.includes(r.status)).length;
-  const pending=results.filter(r=>r.status===ITEM_STATUS.PENDING).length;
   const now=new Date();
 
-  document.getElementById('sum-check').textContent = pending>0 ? '📋' : '✅';
-  document.getElementById('sum-title').textContent = pending>0 ? `Resumen — ${pending} sin armar` : 'Pedido completado';
-  document.getElementById('sum-hub-p').textContent=`${hub}${assembler?' · '+assembler:''} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`;
-  document.getElementById('st-total').textContent=total;
-  document.getElementById('st-ok').textContent=ok;
-  document.getElementById('st-part').textContent=partial;
-  document.getElementById('st-skip').textContent=skipped;
-  document.getElementById('sum-list').innerHTML=items.map((item,i)=>{
-    const r=results[i], icon={completed:'✅',partial:'⚠️',skipped:'❌',shortdate:'📅',nobc:'⚠️',wrongsys:'⚠️',pending:'⏳'}[r.status]||'⏳';
-    const unit=item['Kg/Pz']||'Pz', rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
-    const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
-    const pick=r.picked!==null?(unit==='Kg'?Number(r.picked).toFixed(2):Math.round(r.picked)):'—';
-    const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
-    const bcNote=r.bcStatus===BC_STATUS.UNAVAIL?' · ⚠ BC ilegible':r.bcStatus===BC_STATUS.WRONGSYS?' · ⚠ Discrepancia':'';
-    const skipNote=r.status===ITEM_STATUS.SHORTDATE?' · 📅 Fecha corta':'';
-    return `<div class="sum-row"><span class="sum-icon">${icon}</span><div class="sum-detail"><div class="sum-name">${escH(item['Producto']||'')}</div><div class="sum-qty">Solicitado: ${reqQ} ${unit} · Armado: ${pick} ${unit}${bcNote}${skipNote}</div></div><span class="sum-pos">${escH(pos)}</span></div>`;
-  }).join('');
+  renderSummaryBody(
+    items.map((item,i)=>liveSummaryRow(item, results[i])),
+    `${hub}${assembler?' · '+assembler:''} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`,
+    'live'
+  );
 
   const aslug=getAssemblersSlug(results, assembler);
   const {path, suffix}=getReportPath(hub, aslug, ronda);
@@ -1740,6 +2205,97 @@ function backToListFromSummary(){
   if(seg && seg.end) S.segments.push(newSegment());
   startPicksPoll();
   showScreen('list'); renderList();
+}
+
+/* ── §8.6c — 📋 Pedidos armados (assembler-side, read-only) ─────────────────────
+   Lists assemblies finished against orders STILL in the bucket (not a history) and
+   reopens each as the same summary view, read-only. Visible to every assembler. */
+// One report CSV row → a normalized summary row (reverse of generateCSV's estado / bcVerify maps; legacy-tolerant)
+function reportRowToSummary(rr){
+  const unit=rr['Unidad']||'Pz';
+  const reqN=parseFloat(rr['Solicitado']); const req=isNaN(reqN)?null:reqN;
+  const pkRaw=rr['Armado'], pkN=parseFloat(pkRaw); const pick=(pkRaw===''||pkRaw==null||isNaN(pkN))?null:pkN;
+  const estado=String(rr['Estado']||'').trim();
+  const status={ 'Completo':ITEM_STATUS.COMPLETED,'Sobrante':ITEM_STATUS.SOBRANTE,'Parcial':ITEM_STATUS.PARTIAL,
+                 'Faltante':ITEM_STATUS.SKIPPED,'Faltante (fecha corta)':ITEM_STATUS.SHORTDATE,'Pendiente':ITEM_STATUS.PENDING }[estado]
+    || (estado.startsWith('Parcial')?ITEM_STATUS.PARTIAL : estado.startsWith('Faltante')?ITEM_STATUS.SKIPPED : ITEM_STATUS.PENDING);
+  const verif=String(rr['Verificación código']||'').trim();
+  const bcStatus = verif==='No disponible (ilegible)'?BC_STATUS.UNAVAIL
+    : verif.startsWith('Discrepancia')?BC_STATUS.WRONGSYS
+    : verif==='Confirmado'?BC_STATUS.SCANNED
+    : verif==='Sin código en sistema'?BC_STATUS.NOSYS : BC_STATUS.PENDING;
+  return { producto:rr['Producto']||'', unit,
+    reqStr:(rr['Solicitado']!=null?String(rr['Solicitado']):''), req,
+    pickStr:(pkRaw!=null&&pkRaw!=='')?String(pkRaw):'—', pick,
+    status, bcStatus, bc:cleanBC(rr['Código en sistema']||''),
+    pos:String(rr['Posición armado']||'').replace(/[\[\]]/g,'').trim() };
+}
+
+let _paOpen=false;
+function togglePedidosArmados(){
+  _paOpen=!_paOpen;
+  document.getElementById('pa-list').style.display=_paOpen?'block':'none';
+  document.getElementById('pa-toggle').textContent='📋 Pedidos armados '+(_paOpen?'▾':'▸');
+  if(_paOpen) loadPedidosArmados();
+}
+async function loadPedidosArmados(){
+  const box=document.getElementById('pa-list');
+  box.innerHTML='<div class="coord-empty">Cargando…</div>';
+  const entries=[];
+  await Promise.all(HUBS.map(async hub=>{
+    try{
+      const [orderFiles, reportFiles]=await Promise.all([ sbList(`orders/${HUB_SLUG[hub]}/`), sbList(`reports/${HUB_SLUG[hub]}/`) ]);
+      const cutoff=orderFiles.filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name))[0]?.name?.replace('.csv','');
+      if(!cutoff) return; // no order in the bucket for this hub → nothing to show
+      reportFiles.filter(f=>f.name&&f.name.endsWith('.csv')&&f.name.slice(0,10)>=cutoff)
+        .forEach(f=>entries.push({hub, path:`reports/${HUB_SLUG[hub]}/${f.name}`, name:f.name}));
+    }catch(_){}
+  }));
+  if(!entries.length){ box.innerHTML='<div class="coord-empty">No hay pedidos armados con pedido activo.</div>'; return; }
+  const parsed=await Promise.all(entries.map(async e=>{
+    try{
+      const csv=await sbFetch(e.path);
+      const rows=Papa.parse(csv.split(/\r?\n/).filter(l=>!l.startsWith('#')).join('\r\n'),{header:true,dynamicTyping:false,skipEmptyLines:true}).data.filter(r=>r['Producto']);
+      return {...e, total:rows.length, armados:rows.filter(r=>String(r['Estado']||'')!=='Pendiente').length};
+    }catch(_){ return {...e, total:null, armados:null}; }
+  }));
+  parsed.sort((a,b)=> b.name.slice(0,10).localeCompare(a.name.slice(0,10)) || a.hub.localeCompare(b.hub) || b.name.localeCompare(a.name));
+  box.innerHTML=parsed.map(e=>{
+    const {label,dateStr}=reportDisplayInfo(e.name);
+    const nn=e.total!=null?`${e.armados}/${e.total}`:'';
+    return `<button class="pa-row" onclick="openFinishedSummary('${escH(e.path)}','${escH(e.hub)}')">
+        <span class="pa-row-hub">${escH(e.hub)}</span>
+        <span class="pa-row-meta">${escH(dateStr)} · ${escH(label)}</span>
+        ${nn?`<span class="pa-row-nn">${nn}</span>`:''}
+      </button>`;
+  }).join('');
+}
+async function openFinishedSummary(path, hub){
+  const {label,dateStr}=reportDisplayInfo(path.split('/').pop());
+  showScreen('summary');
+  document.getElementById('sum-check').textContent='📋';
+  document.getElementById('sum-title').textContent='Pedido armado';
+  document.getElementById('sum-hub-p').textContent=`${hub} · ${dateStr} · ${label}`;
+  ['st-total','st-ok','st-part','st-skip'].forEach(id=>document.getElementById(id).textContent='—');
+  document.getElementById('sum-list').innerHTML='<div class="coord-empty" style="padding:24px">Cargando reporte…</div>';
+  document.getElementById('btn-seguir').style.display='none';
+  document.getElementById('btn-terminar').style.display='none';
+  document.getElementById('btn-sum-back').style.display='';
+  let csv;
+  try{ csv=await sbFetch(path); }
+  catch(e){ document.getElementById('sum-list').innerHTML='<div class="coord-empty" style="padding:24px">No se pudo cargar el reporte.</div>'; return; }
+  const rr=Papa.parse(csv.split(/\r?\n/).filter(l=>!l.startsWith('#')).join('\r\n'),{header:true,dynamicTyping:false,skipEmptyLines:true}).data.filter(r=>r['Producto']);
+  const rows=rr.map(reportRowToSummary).sort((a,b)=>{
+    const pa=parsePos(a.pos), pb=parsePos(b.pos);
+    if(pa[0]!==pb[0]) return pa[0]<pb[0]?-1:1;
+    if(pa[1]!==pb[1]) return pa[1]-pb[1];
+    return pa[2]-pb[2];
+  });
+  renderSummaryBody(rows, `${hub} · ${dateStr} · ${label}`, 'readonly');
+}
+function closeFinishedSummary(){
+  showScreen('setup');
+  if(_paOpen) loadPedidosArmados(); // refresh the list in case a report was just added elsewhere
 }
 
 // "Terminar armado" — now the upload happens here
@@ -1810,7 +2366,9 @@ function generateCSV(items, results, hub, assembler='', fileSuffix='', opts={}){
     const pick=r.picked!==null?(unit==='Kg'?Number(r.picked).toFixed(2):Math.round(r.picked)):'';
     const sysBC=cleanBC(item['Código de barras']), physBC=r.scannedBC||(r.bcStatus===BC_STATUS.SCANNED?sysBC:'');
     const bcVerify={[BC_STATUS.SCANNED]:'Confirmado',[BC_STATUS.UNAVAIL]:'No disponible (ilegible)',[BC_STATUS.WRONGSYS]:'Discrepancia — código físico ≠ sistema',[BC_STATUS.NOSYS]:'Sin código en sistema',[BC_STATUS.PENDING]:'No escaneado'}[r.bcStatus]||'';
-    const estado={[ITEM_STATUS.COMPLETED]:'Completo',[ITEM_STATUS.PARTIAL]:'Parcial',[ITEM_STATUS.NOBC]:'Parcial (BC ilegible)',[ITEM_STATUS.WRONGSYS]:'Parcial (discrepancia de código)',[ITEM_STATUS.SKIPPED]:'Faltante',[ITEM_STATUS.SHORTDATE]:'Faltante (fecha corta)',[ITEM_STATUS.PENDING]:'Pendiente'}[r.status]||'Pendiente';
+    // §8.4 — Estado is the quantity outcome only; the barcode axis is the "Verificación código" column above.
+    // Legacy nobc/wrongsys (a resumed pre-8.4 partial) fall back to Parcial.
+    const estado={[ITEM_STATUS.COMPLETED]:'Completo',[ITEM_STATUS.SOBRANTE]:'Sobrante',[ITEM_STATUS.PARTIAL]:'Parcial',[ITEM_STATUS.NOBC]:'Parcial',[ITEM_STATUS.WRONGSYS]:'Parcial',[ITEM_STATUS.SKIPPED]:'Faltante',[ITEM_STATUS.SHORTDATE]:'Faltante (fecha corta)',[ITEM_STATUS.PENDING]:'Pendiente'}[r.status]||'Pendiente';
     const pos=String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim();
     // Read-only: the computed minimum acceptable expiry that was displayed to the assembler (blank when no shelf-life columns)
     const minExpOut=minExpDMY(computeMinExpDate(item));
@@ -1887,10 +2445,18 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
   const skusTotal=items.length;
   const skusArmados=resolved.length;
   const completos=results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
-  const parciales=results.filter(r=>[ITEM_STATUS.PARTIAL,ITEM_STATUS.NOBC,ITEM_STATUS.WRONGSYS].includes(r.status)).length;
+  const sobrantes=results.filter(r=>r.status===ITEM_STATUS.SOBRANTE).length;
+  const parciales=results.filter(r=>[ITEM_STATUS.PARTIAL,ITEM_STATUS.NOBC,ITEM_STATUS.WRONGSYS].includes(r.status)).length; // incl. legacy
   const faltantes=results.filter(r=>r.status===ITEM_STATUS.SKIPPED).length;
   const fechaCorta=results.filter(r=>r.status===ITEM_STATUS.SHORTDATE).length;
-  const pctCompleto=skusTotal?Math.round(completos/skusTotal*100):0; // share of the order assembled complete
+  // Per-state share of the whole order (skusTotal). completo+parcial+sobrante+faltante+fechaCorta+pendiente = 100.
+  // Diagnostic: faltante → inventory/sorting; sobrante → whole-box shipping vs requested qty; parcial → live inventory / bad counts.
+  const _pct=n=>skusTotal?Math.round(n/skusTotal*100):0;
+  const pctCompleto=_pct(completos);
+  const pctParcial=_pct(parciales);
+  const pctSobrante=_pct(sobrantes);
+  const pctFaltante=_pct(faltantes);
+  const pctSurtido=_pct(completos+sobrantes+parciales); // §8.5 — everything with ≥1 unit picked
 
   const skusHrReloj=minutosReloj>0?_round1(skusArmados/(minutosReloj/60)):0;
   const skusHrActivo=minutosActivos>0?_round1(skusArmados/(minutosActivos/60)):0;
@@ -1920,6 +2486,9 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
   if(skusTotal<FLAG_MIN_SKUS) flags.push('PEDIDO_CHICO');
   if(results.some(r=>!r.status||r.status===ITEM_STATUS.PENDING)) flags.push('INCOMPLETO');
   if(opts.deferred) flags.push('REPORTE_DIFERIDO');
+  // §4 — the order's upload date isn't the day it was assembled (a stale list). ronda 2 is exempt (a
+  // complemento is generated fresh off an older base by design).
+  if(opts.ronda!==2 && opts.orderDate && first && String(opts.orderDate).slice(0,10)!==localDateStr(first)) flags.push('PEDIDO_VIEJO');
   if(!(minutosReloj>0)) flags.push('SIN_TIEMPO');
 
   // ── §3.4 skip-behaviour + light-accuracy (from per-result fields set during the assembly) ──
@@ -1928,7 +2497,15 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
   skipRows.forEach(r=>{ const k=r.luzAlSkip||'sin_dato'; luzAlSkip[k]=(luzAlSkip[k]||0)+1; });
   const faltantesRapidos=skipRows.filter(r=>typeof r.handleSec==='number' && r.handleSec<MIN_SEARCH_SEC).length;
   const faltantesDesmentidos=results.filter(r=>r._contradicted).length;
+  // §8.3 — carry the finder names alongside the count so the coordinator sees who, not just how many
+  const desmentidoPor=results.map((r,i)=>{
+    const c=r&&r._contradictedBy;
+    if(!r||!r._contradicted||!c) return null;
+    return { producto:(items[i]&&items[i]['Producto'])||'', armadores:c.armadores||[], hubs:c.hubs||[],
+             hora:c.ts?new Date(c.ts).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):'' };
+  }).filter(Boolean);
   const pickedRows=results.filter(r=>Number(r.picked)>0);
+  const invAmbiguos=results.filter(r=>r&&r._invAmbiguo).length; // §2b — SKUs where a same-day snapshot post-dated a pick
   const rojosEncontrados=pickedRows.filter(r=>r.luzAlSkip==='rojo').length;   // light said 🔴, they found it anyway
   const rojosNoEncontrados=skipRows.filter(r=>r.luzAlSkip==='rojo').length;
   const verdesNoEncontrados=skipRows.filter(r=>r.luzAlSkip==='verde').length; // consumption the app can't see
@@ -1936,9 +2513,10 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
   return {
     v:2, hub, fecha:localDateStr(now), armadores, orderDate:opts.orderDate||'', ronda:opts.ronda||1,
     skusTotal, skusArmados, minutosReloj, minutosActivos, skusHrReloj, skusHrActivo,
-    segMedianoPorSku, faltantes, fechaCorta, parciales, pctCompleto,
+    segMedianoPorSku, faltantes, fechaCorta, parciales, sobrantes,
+    pctCompleto, pctParcial, pctSobrante, pctFaltante, pctSurtido,
     porArmador, flags, segments:(segments||[]),
-    luzAlSkip, faltantesRapidos, faltantesDesmentidos, rojosEncontrados, rojosNoEncontrados, verdesNoEncontrados,
+    luzAlSkip, faltantesRapidos, faltantesDesmentidos, desmentidoPor, invAmbiguos, rojosEncontrados, rojosNoEncontrados, verdesNoEncontrados,
     generatedAt:now.toISOString()
   };
 }
@@ -1973,7 +2551,11 @@ const METRIC_COLS=[
   { key:'shr',   label:'SKUs/hr',     kind:'num',  get:m=>m.skusHrReloj||0 },
   { key:'falt',  label:'Faltantes',   kind:'num',  get:m=>m.faltantes||0 },
   { key:'corta', label:'Fecha corta', kind:'num',  get:m=>m.fechaCorta||0 },
-  { key:'pct',   label:'% completo',  kind:'num',  get:m=>m.pctCompleto||0, suffix:'%' },
+  { key:'pct',   label:'% completo',  kind:'num',  get:m=>m.pctCompleto||0, suffix:'%', title:'Se armó la cantidad solicitada' },
+  { key:'ppar',  label:'% parcial',   kind:'num',  get:m=>m.pctParcial,  suffix:'%', title:'Se armó de menos — inventario en vivo o inventario mal contado' },
+  { key:'psob',  label:'% sobrante',  kind:'num',  get:m=>m.pctSobrante, suffix:'%', title:'Se armó de más — se manda la caja completa en vez de la cantidad pedida' },
+  { key:'pfal',  label:'% faltante',  kind:'num',  get:m=>m.pctFaltante, suffix:'%', title:'No se encontró (0 armado) — inventario o acomodo' },
+  { key:'psurt', label:'% surtido',   kind:'num',  get:m=>m.pctSurtido,  suffix:'%', title:'Todo lo que salió con ≥1 unidad (completo + parcial + sobrante)' },
   { key:'seg',   label:'Seg/SKU',     kind:'num',  get:m=>m.segMedianoPorSku||0 }
 ];
 
@@ -2052,6 +2634,7 @@ function _metricFilteredSorted(){
     if(col.kind==='flags') return ((a.flags||[]).length-(b.flags||[]).length)*dir;
     let va=col.get(a), vb=col.get(b);
     if(col.kind==='str'){ va=String(va).toLowerCase(); vb=String(vb).toLowerCase(); return va<vb?-dir:va>vb?dir:0; }
+    va=(va==null||Number.isNaN(Number(va)))?-1:Number(va); vb=(vb==null||Number.isNaN(Number(vb)))?-1:Number(vb);
     return (va-vb)*dir;
   });
   return rows;
@@ -2069,7 +2652,7 @@ function renderMetrics(){
 
   const thead='<thead><tr><th></th>'+METRIC_COLS.map(c=>{
     const ind=c.key===_metricsSort.key?`<span class="sort-ind">${_metricsSort.dir<0?'▾':'▴'}</span>`:'';
-    return `<th onclick="metricsSort('${c.key}')">${c.label}${ind}</th>`;
+    return `<th onclick="metricsSort('${c.key}')"${c.title?` title="${escH(c.title)}"`:''}>${c.label}${ind}</th>`;
   }).join('')+'</tr></thead>';
 
   const tbody='<tbody>'+(rows.length?rows.map(m=>{
@@ -2083,7 +2666,10 @@ function renderMetrics(){
         return `<td class="flag-cell" title="${escH(tip)}">${icons}</td>`;
       }
       let v=c.get(m);
-      if(c.kind==='num'){ v=_round1(v); return `<td>${escH(String(v))}${c.suffix||''}</td>`; }
+      if(c.kind==='num'){
+        if(v==null||Number.isNaN(Number(v))) return `<td>—</td>`; // e.g. % surtido on a pre-8.5 sidecar
+        v=_round1(v); return `<td>${escH(String(v))}${c.suffix||''}</td>`;
+      }
       return `<td>${escH(String(v))}</td>`;
     }).join('');
     return `<tr class="${irr?'irregular':''}">${del}${cells}</tr>`;
@@ -2100,7 +2686,7 @@ function renderMetrics(){
   const tfoot=rows.length?`<tfoot>
     <tr><td colspan="5">Totales · ${agg.length} armado${agg.length!==1?'s':''}</td>
       <td>${totSkus}</td><td>${_round1(totReloj)}</td><td>${_round1(totActivo)}</td><td>${wRate}</td>
-      <td colspan="4"></td></tr>
+      <td colspan="8"></td></tr>
     ${note?`<tr><td colspan="${METRIC_COLS.length+1}" class="metrics-foot-note">${note}</td></tr>`:''}
   </tfoot>`:'';
 
@@ -2126,15 +2712,18 @@ function deleteMetric(path){
 
 function downloadMetricsCSV(){
   const rows=_metricsRendered||[];
-  const headers=['Fecha','Hub','Armadores','SKUs','Min reloj','Min activos','SKUs/hr','Faltantes','Fecha corta','% completo','Seg/SKU',
-    'F. rápidos','F. desmentidos','Rojos encontrados','Rojos no encontrados','Verdes no encontrados','Flags','Regular'];
+  const headers=['Fecha','Hub','Armadores','SKUs','Min reloj','Min activos','SKUs/hr','Faltantes','Fecha corta','% completo','% parcial','% sobrante','% faltante','% surtido','Seg/SKU',
+    'F. rápidos','F. desmentidos','Desmentido por','Rojos encontrados','Rojos no encontrados','Verdes no encontrados','Flags','Regular'];
   const body=rows.map(m=>{
     const fl=(m.flags||[]).slice().sort((a,b)=>FLAG_ORDER.indexOf(a)-FLAG_ORDER.indexOf(b));
+    const desmPor=(m.desmentidoPor||[]).map(d=>`${d.producto}: ${(d.armadores||[]).join('/')}${d.hora?' @'+d.hora:''}`).join(' | ');
     return [
       m.fecha||'', m.hub||'', (m.armadores||[]).join(', '),
       m.skusArmados||0, _round1(m.minutosReloj||0), _round1(m.minutosActivos||0), _round1(m.skusHrReloj||0),
-      m.faltantes||0, m.fechaCorta||0, m.pctCompleto||0, m.segMedianoPorSku||0,
-      m.faltantesRapidos||0, m.faltantesDesmentidos||0, m.rojosEncontrados||0, m.rojosNoEncontrados||0, m.verdesNoEncontrados||0,
+      m.faltantes||0, m.fechaCorta||0, m.pctCompleto||0,
+      (m.pctParcial==null?'—':m.pctParcial), (m.pctSobrante==null?'—':m.pctSobrante), (m.pctFaltante==null?'—':m.pctFaltante), (m.pctSurtido==null?'—':m.pctSurtido),
+      m.segMedianoPorSku||0,
+      m.faltantesRapidos||0, m.faltantesDesmentidos||0, desmPor, m.rojosEncontrados||0, m.rojosNoEncontrados||0, m.verdesNoEncontrados||0,
       fl.join(';'), fl.length?'No':'Sí'
     ];
   });
@@ -2152,11 +2741,17 @@ function skuKeyOf(item){
   const bc=cleanBC(item['Código de barras']);
   return bc || ('norm:'+normName(item['Producto']||''));
 }
+// §2 — resolve a SKU's inventory through today's shared baseline first (any hub's freshest same-day
+// snapshot), falling back to this file's own row value. Returns {inv, fuente:'dia'|'archivo', uploadedAt}
+// or {inv:null} when there is no inventory data at all.
 function itemInventario(item){
   const raw=String(item['Inventario hub saliente']||'').trim();
-  if(raw==='') return null;
-  const n=Number(raw);
-  return isNaN(n)?null:n;
+  const rowInv=(raw==='')?null:(isNaN(Number(raw))?null:Number(raw));
+  const dia=S._invDia && S._invDia[skuKeyOf(item)];
+  if(dia && dia.inv!=null && (!dia.unidad || dia.unidad===itemUnit(item))){
+    return { inv:Number(dia.inv), fuente:'dia', uploadedAt:dia.uploadedAt||'' };
+  }
+  return { inv:rowInv, fuente:(rowInv==null?null:'archivo'), uploadedAt:'' };
 }
 function itemSolicitado(item){
   const q=parseFloat(item['Solicitud (kg/pz)'])||0;
@@ -2165,10 +2760,24 @@ function itemSolicitado(item){
 
 const PICK_SELECT='id,hub,sku_key,unidad,cantidad,senal,armador,ts';
 
-async function loadPicks(){
-  S._picks=[]; S._picksMaxTs='';
+// §2b — today's shared inventory baseline, loaded once on screen entry (and on the manual ↺ / day rollover).
+// NOT on the 10 s poll — it changes at upload time, not at pick time.
+async function loadInvDia(){
+  const day=todayStr();
+  S._invDiaDay=day;
   try{
-    const rows=await pgSelect('picks', `fecha=eq.${todayStr()}&ronda=eq.${S.ronda}&order=ts.asc&select=${PICK_SELECT}`);
+    const j=JSON.parse(await sbFetch(`inventario_dia/${day}.json`));
+    S._invDia=(j && j.skus && typeof j.skus==='object') ? j.skus : null;
+  }catch(_){ S._invDia=null; }
+  recomputeLights(); updateLightChips();
+}
+function refreshSemaforo(){ loadInvDia(); pollPicks(); } // the N/N progress tap
+
+async function loadPicks(){
+  const day=todayStr();
+  S._picks=[]; S._picksMaxTs=''; S._picksDay=day;
+  try{
+    const rows=await pgSelect('picks', `fecha=eq.${day}&ronda=eq.${S.ronda}&order=ts.asc&select=${PICK_SELECT}`);
     S._picks=rows;
     S._picksMaxTs=rows.length?rows[rows.length-1].ts:'';
     S._picksReachable=true;
@@ -2179,6 +2788,9 @@ async function loadPicks(){
   recomputeLights();
 }
 async function pollPicks(){
+  // §3 Fix B — the calendar day rolled over while the list stayed open. Reload from scratch so today's
+  // consumption isn't summed onto yesterday's buffer (which collapses `disponible` and paints false reds).
+  if(S._picksDay && S._picksDay!==todayStr()){ await loadPicks(); loadInvDia(); updateLightChips(); return; }
   if(!S._picksReachable){ await loadPicks(); if(!S._picksReachable){ return; } updateLightChips(); return; }
   try{
     const q = S._picksMaxTs
@@ -2191,8 +2803,19 @@ async function pollPicks(){
       if(S._picks.length) S._picksMaxTs=S._picks[S._picks.length-1].ts;
     }
   }catch(e){ return; } // transient — keep last known lights
+  const contraBefore=Object.keys(S._contradicted).sort().join(',');
   recomputeLights();
-  updateLightChips();
+  const contraAfter=Object.keys(S._contradicted).sort().join(',');
+  // A newly-contradicted row must move into the 🔁 section (so the header chip can jump to it and the
+  // pending filter can still reach it). updateLightChips only paints chips in place — a full renderList
+  // re-partitions, but must never yank an open panel, so defer it until the panel closes.
+  if((contraAfter!==contraBefore || _revisarRepartitionPending) && _expandedIdx<0){
+    _revisarRepartitionPending=false;
+    renderList();
+  }else{
+    updateLightChips();
+    if(contraAfter!==contraBefore) _revisarRepartitionPending=true;
+  }
 }
 function startPicksPoll(){
   stopPicksPoll();
@@ -2205,34 +2828,53 @@ function stopPicksPoll(){ if(S._pollTimer){ clearInterval(S._pollTimer); S._poll
 // Rebuild S._lights (per item index) and S._contradicted from the picks buffer
 function recomputeLights(){
   S._lights={}; S._contradicted={};
-  S.results.forEach(r=>{ if(r) r._contradicted=false; });
+  S.results.forEach(r=>{ if(r){ r._contradicted=false; r._contradictedBy=null; } });
   if(!S._picksReachable || !S.items.length) return;
 
   const myHub=S.hub;
   const byKey={};
   for(const p of S._picks){
     const k=p.sku_key; if(!k) continue;
-    const b=byKey[k]||(byKey[k]={cons:{}, noEnc:new Set(), pos:new Set(), lastConsTs:0});
+    const b=byKey[k]||(byKey[k]={cons:{}, noEnc:new Set(), pos:new Set(), posBy:{}, lastConsTs:0, firstPickTs:0});
     const qty=Number(p.cantidad)||0;
+    const pt=Date.parse(p.ts)||0;
+    if(pt && (!b.firstPickTs || pt<b.firstPickTs)) b.firstPickTs=pt; // §2b — earliest pick of any kind on this SKU today
     if(p.hub!==myHub){ // "consumido por otros hubs" — my own hub's picks are me
       const u=(p.unidad||'').trim(); // '' bucket = unit not recorded; counts toward any item's unit
       b.cons[u]=(b.cons[u]||0)+qty;
-      if(qty>0){ const t=Date.parse(p.ts)||0; if(t>b.lastConsTs) b.lastConsTs=t; }
+      if(qty>0){ if(pt>b.lastConsTs) b.lastConsTs=pt; }
     }
     if(p.senal==='no_encontrado' && p.armador) b.noEnc.add(p.armador);
-    if(qty>0 && p.armador) b.pos.add(p.armador);
+    if(qty>0 && p.armador){
+      b.pos.add(p.armador);
+      const t=Date.parse(p.ts)||0;
+      const e=b.posBy[p.armador]||(b.posBy[p.armador]={hub:p.hub||'', ts:p.ts||'', _t:-1});
+      if(t>=e._t){ e._t=t; e.ts=p.ts||e.ts; e.hub=p.hub||e.hub; }
+      b.posBy[p.armador]=e;
+    }
   }
 
   S.items.forEach((item,i)=>{
-    const inv=itemInventario(item);
-    if(inv==null) return; // no inventory column for this SKU → no light, ever
+    const invInfo=itemInventario(item);
+    const inv=invInfo.inv;
+    if(inv==null) return; // no inventory data at all → no light, ever
     const key=skuKeyOf(item);
-    const b=byKey[key]||{cons:{}, noEnc:new Set(), pos:new Set(), lastConsTs:0};
+    const b=byKey[key]||{cons:{}, noEnc:new Set(), pos:new Set(), posBy:{}, lastConsTs:0, firstPickTs:0};
     const r=S.results[i];
 
     // Contradiction: I marked "no se encontró" and another assembler has a real pick on the same SKU today
     if(r && r.status===ITEM_STATUS.SKIPPED && r._senal==='no_encontrado'){
-      if([...b.pos].some(a=>a!==S.assembler)){ S._contradicted[i]=true; r._contradicted=true; }
+      const finders=[...b.pos].filter(a=>a!==S.assembler);
+      if(finders.length){
+        let latestT=-1, latestTs='';
+        const hubsPar=finders.map(a=>{
+          const e=b.posBy[a];
+          if(e && (e._t||-1)>latestT){ latestT=e._t; latestTs=e.ts; }
+          return e ? (e.hub||'') : '';
+        });
+        const info={ armadores:finders, hubs:hubsPar, ts:latestTs };
+        S._contradicted[i]=info; r._contradicted=true; r._contradictedBy=info;
+      }
     }
 
     const unit=itemUnit(item);
@@ -2247,21 +2889,28 @@ function recomputeLights(){
     const noEnc=b.noEnc.size;
     const nameJoin=key.startsWith('norm:'); // name-matched SKUs may raise 🟡, never 🔴
     const hora=b.lastConsTs ? new Date(b.lastConsTs).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '';
+    const invFuente=invInfo.fuente; // 'dia' (fresh, today) | 'archivo' (this file's own, maybe stale)
+    const invFecha=invInfo.uploadedAt||''; // for 'dia'; the panel shows the file date for 'archivo' (§2e)
+    // §2b — a same-day snapshot uploaded AFTER a pick was already recorded on this SKU: can't tell whether
+    // that pick is inside the new number. Keep subtracting (best guess) but withhold the 🔴 "don't look".
+    const invAmbiguo = invFuente==='dia' && invFecha && b.firstPickTs && Date.parse(invFecha) > b.firstPickTs;
+    // §2d — a stale baseline (this file's own value, no same-day number) can never produce a red.
+    const cappedAtYellow = nameJoin || invFuente==='archivo' || invAmbiguo;
 
     // The light reflects what OTHER hubs have done today. No consumption and no testimony → green,
     // whatever the stock level (a zero-inventory SKU is the assembler's normal Faltante flow, not contention).
     if(consumido<=0 && noEnc<FLAG_NOTFOUND_MIN){
-      S._lights[i]={ color:'verde', basis:'aritmetica', inventario:inv, consumido:0, disponible:inv, solicitado, noEnc, hora:'' };
+      S._lights[i]={ color:'verde', basis:'aritmetica', inventario:inv, consumido:0, disponible:inv, solicitado, noEnc, hora:'', invFuente, invFecha, invAmbiguo };
       return;
     }
 
     let color, basis='aritmetica';
-    if(disponible<=0)               color = nameJoin ? 'amarillo' : 'rojo';
+    if(disponible<=0)               color = cappedAtYellow ? 'amarillo' : 'rojo';
     else if(disponible<solicitado)  color = 'amarillo';
     else if(noEnc>=FLAG_NOTFOUND_MIN){ color='amarillo'; basis='testimonio'; }
     else                            color = 'verde';
 
-    S._lights[i]={ color, basis, inventario:inv, consumido, disponible, solicitado, noEnc, hora };
+    S._lights[i]={ color, basis, inventario:inv, consumido, disponible, solicitado, noEnc, hora, invFuente, invFecha, invAmbiguo };
   });
 }
 
@@ -2271,6 +2920,25 @@ function activeLight(i){
   if(!r || r.status!==ITEM_STATUS.PENDING) return null;
   const lt=S._lights[i];
   return (lt && lt.color!=='verde') ? lt : null;
+}
+
+// §8.3 — the finder evidence behind a 🔁 row: who confirmed a real pick on a SKU this assembler marked faltante,
+// which hub, and the latest such pick's time. armadores/hubs are parallel; S.assembler is excluded upstream.
+function contradictedInfo(i){
+  const c=S._contradicted[i];
+  if(!c || typeof c!=='object') return null;
+  const names=c.armadores||[], hubs=c.hubs||[];
+  const hora=c.ts?new Date(c.ts).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):'';
+  const first=names[0]||'Otro armador', multi=names.length>1;
+  const who=multi?`${first} y ${names.length-1} más`:`${first}${hubs[0]?` (${hubs[0]})`:''}`;
+  const verb=multi?'sí lo encontraron':'sí lo encontró';
+  const when=hora?` a las ${hora}`:'';
+  return {
+    names, hubs, hora, multi,
+    short:`${who} ${verb}${when}`,
+    sentence:`🔁 ${who} ${verb}${when} — pregúntale antes de dejarlo como faltante`,
+    list:multi?names.map((a,k)=>a+(hubs[k]?` (${hubs[k]})`:'')).join(' · '):''
+  };
 }
 
 // One row per confirm / faltante. Fire-and-forget (Phase 6 will route this through the outbox).
@@ -2309,7 +2977,9 @@ function updateLightChips(){
       else { chip=document.createElement('span'); chip.className=cls; chip.textContent=txt; meta.appendChild(chip); }
     } else if(chip){ chip.remove(); }
     if(S._contradicted[i] && !meta.querySelector('.revisar-chip')){
-      const rc=document.createElement('span'); rc.className='revisar-chip'; rc.textContent='🔁'; meta.appendChild(rc);
+      const rc=document.createElement('span'); rc.className='revisar-chip'; rc.textContent='🔁';
+      const ci=contradictedInfo(i); if(ci) rc.title=ci.short;
+      meta.appendChild(rc);
     }
   });
   updateRevisarHeaderChip();
@@ -2320,18 +2990,16 @@ function updateRevisarHeaderChip(){
   const n=Object.keys(S._contradicted).filter(k=>S._contradicted[k]).length;
   if(n>0){ el.style.display=''; el.textContent=`🔁 ${n}`; } else el.style.display='none';
 }
-let _revisarOpen=false;
-function toggleRevisar(){
-  _revisarOpen=!_revisarOpen;
-  const bodyEl=document.getElementById('revisar-body'), caret=document.getElementById('revisar-caret');
-  if(bodyEl) bodyEl.style.display=_revisarOpen?'block':'none';
-  if(caret) caret.textContent=_revisarOpen?'▾':'▸';
-}
+let _revisarRepartitionPending=false; // a poll found a new 🔁 while a panel was open — rebuild the list on close
 function scrollToRevisar(){
+  // The section may not exist yet if a poll added the 🔁 in place without re-partitioning — rebuild first.
+  if(!document.getElementById('revisar-section')){
+    if(_expandedIdx>=0) collapseDetail();
+    _revisarRepartitionPending=false;
+    renderList();
+  }
   const sec=document.getElementById('revisar-section');
-  if(!sec) return;
-  if(!_revisarOpen) toggleRevisar();
-  sec.scrollIntoView({behavior:'smooth', block:'start'});
+  if(sec) sec.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 /* ── COORDINATOR: inventory conflicts + faltantes — hoy (§3.4) ── */
@@ -2347,8 +3015,13 @@ function toggleInvToday(){
 async function loadInvToday(){
   const body=document.getElementById('invtoday-body');
   body.innerHTML='<div class="coord-empty">Cargando…</div>';
+  const today=todayStr();
 
-  // 1. Every hub's current order → demand per SKU (aggregated within unit, latest inventory value wins)
+  // §2f — today's shared baseline is the authority on the `inv` term; the per-hub files only give demand.
+  let diaSkus={};
+  try{ const j=JSON.parse(await sbFetch(`inventario_dia/${today}.json`)); if(j && j.skus) diaSkus=j.skus; }catch(_){}
+
+  // 1. Every hub's current order → demand per SKU (aggregated within unit)
   const perHubOrders=await Promise.all(HUBS.map(async hub=>{
     try{
       const files=(await sbList(`orders/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name));
@@ -2360,15 +3033,20 @@ async function loadInvToday(){
     }catch(_){ return {hub, rows:[], date:''}; }
   }));
 
-  const sku={}; // key -> { producto, unit, inv, byHub:{hub:qty}, invDate }
+  const sku={}; // key -> { producto, unit, inv, byHub:{hub:qty}, invDate, viejo }
   perHubOrders.forEach(({hub,rows,date})=>{
+    const stale = date && date.slice(0,10) < today; // this hub's latest file is not today's
     rows.forEach(item=>{
       const key=skuKeyOf(item), unit=itemUnit(item);
-      const s=sku[key]||(sku[key]={producto:item['Producto']||key, unit, inv:null, byHub:{}, invDate:''});
+      const s=sku[key]||(sku[key]={producto:item['Producto']||key, unit, inv:null, byHub:{}, invDate:'', viejo:false});
       if(s.unit!==unit) return; // mixed units for one SKU → skip the check (never convert)
-      const inv=itemInventario(item);
-      if(inv!=null && (s.inv==null || date>s.invDate)){ s.inv=inv; s.invDate=date; }
+      // inv term: today's shared baseline first, else the freshest file value (most-recent upload wins)
+      const dia=diaSkus[key];
+      if(dia && dia.inv!=null && (!dia.unidad || dia.unidad===unit)){ s.inv=Number(dia.inv); s.invDate=today; }
+      else { const raw=String(item['Inventario hub saliente']||'').trim(), n=raw===''?null:(isNaN(Number(raw))?null:Number(raw));
+             if(n!=null && (s.inv==null || date>s.invDate)){ s.inv=n; s.invDate=date; } }
       s.byHub[hub]=(s.byHub[hub]||0)+itemSolicitado(item);
+      if(stale) s.viejo=true;
     });
   });
 
@@ -2415,12 +3093,88 @@ async function loadInvToday(){
 
   const sinInvNote = sinInvCount ? `<div class="coord-empty">+ ${sinInvCount} SKU${sinInvCount>1?'s':''} sin inventario — ver 📄 No surtido</div>` : '';
   const confHtml = (conflicts.length
-    ? conflicts.map(s=>`<div class="invrow"><b>${escH(s.producto)}</b><span>Inv ${s.inv} · pedido ${s.pedido} en ${s.hubs} hub${s.hubs>1?'s':''} · <span style="color:var(--red)">faltan ${_round1(s.faltan)}</span></span></div>`).join('')
+    ? conflicts.map(s=>`<div class="invrow"><b>${escH(s.producto)}</b><span>Inv ${s.inv} · pedido ${s.pedido} en ${s.hubs} hub${s.hubs>1?'s':''} · <span style="color:var(--red)">faltan ${_round1(s.faltan)}</span>${s.viejo?' · <span style="color:var(--orange)">incluye pedido viejo</span>':''}</span></div>`).join('')
     : '<div class="coord-empty">Ningún SKU con stock disputado.</div>') + sinInvNote;
 
   body.innerHTML=`
     <div class="invsub-title">⚠️ Conflictos de inventario — hoy</div>${confHtml}
     <div class="invsub-title" style="margin-top:16px">📭 Faltantes de hoy</div>${faltHtml}`;
+}
+
+// §8.8 — one CSV per day: real faltantes only, sorted by Posición armado so the CH is walked in a single pass.
+// Source: picks (senal not null). Desmentido rows (another assembler found it) are dropped entirely.
+// "Reportes" = how many distinct assemblers reported that SKU missing today (a 2+ signals it's really gone).
+async function downloadFaltantesDelDia(){
+  const date=todayStr();
+  let falt;
+  try{
+    falt=await pgSelect('picks', `fecha=eq.${date}&senal=not.is.null&order=ts.asc&select=hub,sku_key,producto,unidad,senal,armador,ts`);
+  }catch(e){ toast('❌ Tabla de picks inalcanzable'); return; }
+  if(!falt||!falt.length){ toast('Sin faltantes registrados hoy'); return; }
+
+  let positives=[];
+  try{ positives=await pgSelect('picks', `fecha=eq.${date}&cantidad=gt.0&select=sku_key,armador`); }catch(_){ positives=[]; }
+  const posArmadores={};
+  (positives||[]).forEach(p=>{ (posArmadores[p.sku_key]=posArmadores[p.sku_key]||new Set()).add(p.armador||''); });
+
+  // Drop desmentido rows: a "no se encontró" whose SKU has a positive pick from a different assembler today.
+  const kept=falt.filter(p=>{
+    if(p.senal!=='no_encontrado') return true; // fecha_corta is never "desmentido"
+    return ![...(posArmadores[p.sku_key]||[])].some(a=>a!==(p.armador||''));
+  });
+  if(!kept.length){ toast('Sin faltantes por revisar hoy (todos desmentidos)'); return; }
+
+  const reportesByKey={}; // sku_key -> distinct assemblers who reported it missing (post-filter)
+  kept.forEach(p=>{ (reportesByKey[p.sku_key]=reportesByKey[p.sku_key]||new Set()).add(p.armador||''); });
+
+  // Join position / CH inventory / requested qty from each hub's latest order file, keyed by (hub, skuKey)
+  const lookup={};
+  await Promise.all(HUBS.map(async hub=>{
+    try{
+      const files=(await sbList(`orders/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name));
+      if(!files.length) return;
+      const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${files[0].name}`);
+      const parsed=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
+      const byKey=(lookup[hub]={});
+      parsed.data.forEach(item=>{
+        if(!item['Producto']) return;
+        byKey[skuKeyOf(item)]={
+          pos:String(item['Posición armado']||'').replace(/[\[\]]/g,'').trim(),
+          invCH:String(item['Inventario hub saliente']||'').trim(),
+          solicitado:itemSolicitado(item)
+        };
+      });
+    }catch(_){}
+  }));
+
+  const rows=kept.map(p=>{
+    const j=(lookup[p.hub]||{})[p.sku_key]||{};
+    return {
+      fecha:date.split('-').reverse().join('/'),
+      hub:p.hub||'',
+      producto:p.producto||'',
+      codigo:String(p.sku_key||'').startsWith('norm:')?'':(p.sku_key||''),
+      pos:j.pos||'',
+      invCH:j.invCH!=null?j.invCH:'',
+      solicitado:j.solicitado!=null?j.solicitado:'',
+      motivo:p.senal==='fecha_corta'?'Fecha corta':'No se encontró',
+      reportes:(reportesByKey[p.sku_key]||{size:1}).size,
+      armador:p.armador||'',
+      hora:p.ts?new Date(p.ts).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):''
+    };
+  }).sort((a,b)=>{
+    const pa=parsePos(a.pos), pb=parsePos(b.pos);
+    if(pa[0]!==pb[0]) return pa[0]<pb[0]?-1:1;
+    if(pa[1]!==pb[1]) return pa[1]-pb[1];
+    if(pa[2]!==pb[2]) return pa[2]-pb[2];
+    return (a.hub||'').localeCompare(b.hub||'');
+  });
+
+  const headers=['Fecha','Hub','Producto','Código de barras','Posición armado','Inventario CH','Solicitado','Motivo','Reportes','Armador','Hora'];
+  const body=rows.map(r=>[r.fecha,r.hub,r.producto,r.codigo,r.pos,r.invCH,r.solicitado,r.motivo,r.reportes,r.armador,r.hora]);
+  const csv=[headers,...body].map(row=>row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  triggerDownload(csv, `faltantes_${date}.csv`);
+  toast(`✓ ${rows.length} faltante${rows.length!==1?'s':''} de hoy`);
 }
 
 /* ── RESERVA + CIERRE — round-2 cross-check (§3.5) · read-only: it reports, it generates nothing ── */
@@ -2714,8 +3468,13 @@ async function openRegistro(path, hub, dateStr){
     const salida=r['Salida (kg/pz)']!==undefined&&r['Salida (kg/pz)']!=='' ? parseFloat(r['Salida (kg/pz)'])||0 : armado;
     const falt=Math.max(0, solicitado-armado);
     const estado=r['Estado']||'';
-    const exc=estado!=='Completo';
-    return { key:'r'+i, producto:r['Producto']||'', unit, salida, falt, estado, exc };
+    // §8.4 — split on quantity Estado ≠ Completo OR a barcode exception (its own column), so a
+    // discrepancy on a quantity-complete row still lands in Revisar. Unknown legacy Estado ≠ 'Completo' → Revisar.
+    const verif=r['Verificación código']||'';
+    const bcExc=verif==='No disponible (ilegible)'||verif.startsWith('Discrepancia');
+    const exc=estado!=='Completo'||bcExc;
+    const tag=estado!=='Completo'?estado:(bcExc?(verif.startsWith('Discrepancia')?'código discrepa':'código ilegible'):'');
+    return { key:'r'+i, producto:r['Producto']||'', unit, salida, falt, estado, exc, tag };
   }).sort((a,b)=>a.producto.localeCompare(b.producto,'es'));
 
   let ticks=[];
@@ -2737,7 +3496,7 @@ function renderRegistro(){
       <input type="checkbox" ${ticks.has(r.key)?'checked':''} onchange="toggleRegTick('${r.key}')">
       <span class="reg-prod">${escH(r.producto)}</span>
       <span class="reg-qty">Salida <b>${regQtyStr(r.salida,r.unit)}</b>${r.falt>0?` · Falt <b>${regQtyStr(r.falt,r.unit)}</b>`:''}</span>
-      ${r.exc?`<span class="reg-tag">${escH(r.estado)}</span>`:''}
+      ${r.exc&&r.tag?`<span class="reg-tag">${escH(r.tag)}</span>`:''}
     </label>`;
 
   const sinArmar=_regState.sinArmar||0;
@@ -2812,9 +3571,9 @@ function saveAndExit(){
   const done=S.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
   const total=S.items.length;
   _pendingPartial=null;
-  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S._orderStale=false; _staleAck=false; S.orderDate=''; S.segments=[];
   S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
-  stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
+  stopPicksPoll(); S._picks=[]; S._picksDay=''; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
   const agroup=document.getElementById('assembler-group');
@@ -2830,9 +3589,9 @@ function saveAndExit(){
 function exitKeepingPartial(){
   closeOpenSegment(); savePartialProgress(); // flush the closed segment into the kept partial
   _pendingPartial=null;
-  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S._orderStale=false; _staleAck=false; S.orderDate=''; S.segments=[];
   S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
-  stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
+  stopPicksPoll(); S._picks=[]; S._picksDay=''; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
   const agroup=document.getElementById('assembler-group');
@@ -2848,14 +3607,17 @@ function newOrder(keepPartial){
   const _hub=S.hub, _orderDate=S.orderDate;
   if(_hub && keepPartial!==true) clearPartialSave(_hub, _orderDate);
   _pendingPartial=null;
-  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S.orderDate=''; S.segments=[];
+  _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S._orderStale=false; _staleAck=false; S.orderDate=''; S.segments=[];
   S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
-  stopPicksPoll(); S._picks=[]; S._lights={}; S._contradicted={};
+  stopPicksPoll(); S._picks=[]; S._picksDay=''; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
   const agroup=document.getElementById('assembler-group');
   if(agroup){ agroup.style.display='none'; const sel=document.getElementById('assembler-select'); if(sel){ sel.value=''; sel.className='assembler-select'; } }
   document.getElementById('start-btn').disabled=true;
+  _paOpen=false;
+  const pl=document.getElementById('pa-list'); if(pl){ pl.style.display='none'; pl.innerHTML=''; }
+  const pt=document.getElementById('pa-toggle'); if(pt) pt.textContent='📋 Pedidos armados ▸';
   showScreen('home');
 }
 
@@ -2864,10 +3626,11 @@ function showScreen(name){ clearToast(); document.querySelectorAll('.screen').fo
 
 /* ── MODAL ── */
 function showModal(title,body,okLabel,okClass,onOk){
-  document.getElementById('m-cancel').style.display='';
+  const cancel=document.getElementById('m-cancel');
+  cancel.style.display=''; cancel.textContent='Cancelar'; cancel.onclick=closeModal;
   document.getElementById('m-title').textContent=title; document.getElementById('m-body').textContent=body;
   const ok=document.getElementById('m-ok'); ok.textContent=okLabel; ok.className=okClass||'m-ok';
-  ok.onclick=()=>{ closeModal(); onOk(); }; document.getElementById('m-cancel').onclick=closeModal;
+  ok.onclick=()=>{ closeModal(); onOk(); };
   document.getElementById('modal-bg').classList.add('open');
 }
 function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); }
@@ -2992,6 +3755,8 @@ function resumePartialSave(){
     document.getElementById('assembler-select')?.focus();
     return;
   }
+  // §4 — same stale-list gate as Iniciar Armado
+  if(S._orderStale && !_staleAck){ showStaleWarning(); return; }
   S.hub=_pendingPartial.hub;
   S.items=_pendingPartial.items;
   S.results=restoreDates(_pendingPartial.results);
@@ -3002,11 +3767,11 @@ function resumePartialSave(){
   closeOpenSegment();
   S.segments.push(newSegment());
   S._orderLoaded=true; _pendingPartial=null;
-  S._picks=[]; S._picksMaxTs=''; S._lights={}; S._contradicted={}; S._picksReachable=true; _revisarOpen=false;
+  S._picks=[]; S._picksMaxTs=''; S._picksDay=''; S._lights={}; S._contradicted={}; S._picksReachable=true; _revisarRepartitionPending=false; _listFilter='all';
   document.getElementById('partial-save-notice').style.display='none';
   savePartialProgress(); // persist the reopened-segment state immediately
   buildList(); showScreen('list');
-  loadPicks().then(()=>{ renderList(); }); startPicksPoll();
+  loadPicks().then(()=>{ renderList(); }); loadInvDia(); startPicksPoll();
 }
 
 function discardPartialSave(){
