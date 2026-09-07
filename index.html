@@ -1743,7 +1743,7 @@ function getReportPath(hub, assemblerSlug='', ronda=1){
 /* ── START ── */
 function startAssembly(){
   // User chose to start fresh — discard any in-progress partial for this hub
-  if(S.hub){ clearPartialSave(S.hub); }
+  if(S.hub){ clearPartialSave(S.hub, S.orderDate); }
   _pendingPartial=null;
   const pn=document.getElementById('partial-save-notice'); if(pn){ pn.style.display='none'; pn.innerHTML=''; }
   S.results=S.items.map(item=>{
@@ -2325,7 +2325,7 @@ function finalizeAssembly(){
       return;
     }
     if(outcome==='uploaded'){
-      clearPartialSave(hub);
+      clearPartialSave(hub, orderDate);
       uploadMetricsSidecar(path, items, results, segments, hub, orderDate, false, ronda);
       statusEl.className='sum-upload-status ok';
       statusEl.textContent='✅ Reporte guardado correctamente';
@@ -3328,7 +3328,7 @@ async function revisarCierre(){
       generatedR2Keys(hub, pc.orderDate),
       sbList(`partials/${HUB_SLUG[hub]}/`).catch(()=>[])
     ]);
-    const r1Open=(partials||[]).some(f=>f.name===`${pc.orderDate}.json`); // round 1 not finished
+    const r1Open=(partials||[]).some(f=>isPartialFileForDate(f.name, pc.orderDate)); // round 1 not finished (v2.2: versioned or legacy flat)
     const orderUp=parseMxTs(pc.uploadedAt)||0;
     let reservaTotal=0;
     const candidates=[], noMatch=[];
@@ -3651,16 +3651,26 @@ window.addEventListener('beforeunload',e=>{ if(S.items.length>0&&!document.query
 const PARTIAL_LS_PREFIX='calii_partial_';
 let _pendingPartial=null;
 // Sequence counter — incremented on every save and on every clear.
-// savePartialToSupabase checks that its seq still matches before the final POST,
-// so a clear that arrives between the DELETE and POST steps wins and the stale upload is dropped.
+// savePartialToSupabase checks that its seq still matches before it POSTs, so a clear (or a newer
+// save) that landed first wins and this save is dropped instead of resurrecting stale data.
 let _partialSaveSeq=0;
 let _retryUploadFn=null;
 function retryUpload(){ if(_retryUploadFn) _retryUploadFn(); }
 
-// Keys are hub-only — one partial per hub, any assembler can pick it up
-function partialKey(hub){ return PARTIAL_LS_PREFIX+slugify(hub); }
-// Path keyed by order file date (not today) so partials survive across calendar days
+// Keys are hub+orderDate — one partial per (hub, orderDate), any assembler can pick it up.
+// orderDate is required (v2.2/F1, closes D5): a hub-only key silently mixed up different order dates.
+function partialKey(hub, orderDate){ return PARTIAL_LS_PREFIX+slugify(hub)+'__'+orderDate; }
+// Pre-v2.2 date-less local key — read once for migration, then swept (see loadPartialProgress).
+function legacyPartialKey(hub){ return PARTIAL_LS_PREFIX+slugify(hub); }
+// Legacy flat remote path (pre-v2.2). Kept as a read fallback only — nothing writes it anymore.
 function partialSbPath(hub, orderDate){ return `partials/${HUB_SLUG[hub]}/${orderDate}.json`; }
+// v2.2/F1 — versioned remote path. Each save POSTs a brand-new object (never overwrites), so there
+// is never a window where the remote copy doesn't exist (closes D1/D12/D13's delete-before-write gap).
+function partialVersionPath(hub, orderDate, epochMs, seq){ return `partials/${HUB_SLUG[hub]}/${orderDate}__${epochMs}_${seq}.json`; }
+function isPartialFileForDate(name, orderDate){
+  return !!name && (name===`${orderDate}.json` || (name.startsWith(`${orderDate}__`) && name.endsWith('.json')));
+}
+const PARTIAL_KEEP_VERSIONS=3; // newest N kept per (hub, orderDate); older ones pruned after a successful write
 
 function savePartialProgress(){
   if(!S.hub||!S.items.length||!S.orderDate) return;
@@ -3673,29 +3683,61 @@ function savePartialProgress(){
     ronda:S.ronda, baseDate:S.baseDate, r1Armado:S._r1Armado, // §3.5 round-2 context
     savedAt:new Date().toISOString(), orderDate:S.orderDate
   };
-  try{ localStorage.setItem(partialKey(S.hub),JSON.stringify(payload)); }catch(_){}
+  try{ localStorage.setItem(partialKey(S.hub,S.orderDate),JSON.stringify(payload)); }catch(_){}
   savePartialToSupabase(payload,seq).catch(()=>{});
 }
 
+// v2.2/F1 — write-before-delete. POST a new versioned file; only after that succeeds do we prune
+// older versions for the same (hub, orderDate). Never delete first: the remote copy always exists.
 async function savePartialToSupabase(payload, seq){
-  const path=partialSbPath(payload.hub, payload.orderDate);
-  try{ await sbDelete(path); }catch(_){}
-  // If a clear or a newer save happened while we were awaiting the DELETE, abort the upload
-  if(seq!==_partialSaveSeq) return;
-  await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`,{
-    method:'POST',
-    headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','x-upsert':'true'},
-    body:JSON.stringify(payload)
-  });
+  if(seq!==_partialSaveSeq) return; // superseded by a newer save or a clear before this one ran
+  const epochMs=Date.parse(payload.savedAt)||Date.now();
+  const path=partialVersionPath(payload.hub, payload.orderDate, epochMs, seq);
+  await sbUpload(path, JSON.stringify(payload), 'application/json');
+  prunePartialVersions(payload.hub, payload.orderDate).catch(()=>{});
+}
+
+async function prunePartialVersions(hub, orderDate){
+  const prefix=`partials/${HUB_SLUG[hub]}/`;
+  const files=(await sbList(prefix))
+    .filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json'))
+    .sort((a,b)=>b.name.localeCompare(a.name)); // newest first (epochMs sorts lexicographically)
+  const stale=files.slice(PARTIAL_KEEP_VERSIONS);
+  await Promise.all(stale.map(f=>sbDelete(prefix+f.name).catch(()=>{})));
 }
 
 async function loadPartialProgress(hub, orderDate){
   // 1. localStorage first (fast, works offline)
   try{
-    const raw=localStorage.getItem(partialKey(hub));
+    const raw=localStorage.getItem(partialKey(hub, orderDate));
     if(raw){ const p=JSON.parse(raw); if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return p; }
   }catch(_){}
-  // 2. Supabase (cross-device) — path is keyed by order date so old orders don't interfere
+  // One-time sweep (D5): migrate/remove the pre-v2.2 date-less local key.
+  try{
+    const legacyRaw=localStorage.getItem(legacyPartialKey(hub));
+    if(legacyRaw!==null){
+      localStorage.removeItem(legacyPartialKey(hub));
+      const p=JSON.parse(legacyRaw);
+      if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length){
+        try{ localStorage.setItem(partialKey(hub, orderDate), legacyRaw); }catch(_){}
+        return p;
+      }
+    }
+  }catch(_){}
+  // 2. Supabase (cross-device) — versioned files first; newest one that parses wins (closes D13).
+  try{
+    const files=(await sbList(`partials/${HUB_SLUG[hub]}/`))
+      .filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json'))
+      .sort((a,b)=>b.name.localeCompare(a.name));
+    for(const f of files){
+      try{
+        const raw=await sbFetch(`partials/${HUB_SLUG[hub]}/${f.name}`);
+        const p=JSON.parse(raw);
+        if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return p;
+      }catch(_){} // corrupt/truncated — fall back to the next-older version instead of "no partial"
+    }
+  }catch(_){}
+  // 3. Legacy flat path — pre-v2.2 partials that were never re-saved under the versioned scheme.
   try{
     const raw=await sbFetch(partialSbPath(hub, orderDate));
     const p=JSON.parse(raw);
@@ -3705,10 +3747,16 @@ async function loadPartialProgress(hub, orderDate){
 }
 
 function clearPartialSave(hub, orderDate){
-  _partialSaveSeq++; // invalidates any in-flight savePartialToSupabase for this hub
-  try{ localStorage.removeItem(partialKey(hub)); }catch(_){}
-  const od=orderDate||S.orderDate;
-  if(od) sbDelete(partialSbPath(hub, od)).catch(()=>{});
+  _partialSaveSeq++; // invalidates any in-flight savePartialToSupabase for this hub/date
+  if(!orderDate){ console.error('clearPartialSave: orderDate required, got none for hub', hub); return; }
+  try{ localStorage.removeItem(partialKey(hub, orderDate)); }catch(_){}
+  (async()=>{
+    const prefix=`partials/${HUB_SLUG[hub]}/`;
+    let files=[];
+    try{ files=(await sbList(prefix)).filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json')); }catch(_){}
+    await Promise.all(files.map(f=>sbDelete(prefix+f.name).catch(()=>{})));
+    sbDelete(partialSbPath(hub, orderDate)).catch(()=>{}); // legacy flat file, if any
+  })();
 }
 
 function restoreDates(results){ return results.map(r=>({...r,confirmedAt:r.confirmedAt?new Date(r.confirmedAt):null})); }
