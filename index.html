@@ -230,6 +230,14 @@
     .stat-n{font-size:26px;font-weight:900}
     .stat-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500);margin-top:2px}
     .c-green{color:#00c3b3}.c-orange{color:var(--orange)}.c-red{color:var(--red)}.c-gray{color:var(--gray-500)}
+    /* v2.2 Part B — summary screen sort/filter controls */
+    .sum-controls-row{display:flex;align-items:center;gap:8px;margin:10px 14px 8px;overflow-x:auto}
+    .sum-controls-row .list-filter-seg{flex:none}
+    .sum-search-btn{flex:none;width:30px;height:30px;border:1.5px solid var(--gray-300);border-radius:16px;background:white;font-size:14px;cursor:pointer}
+    .sum-search-input{display:none;flex:1;min-width:0;border:1.5px solid var(--gray-300);border-radius:16px;padding:5px 12px;font-size:13px}
+    .sum-search-input.open{display:block}
+    .sum-view-note{margin:0 14px 8px;font-size:12px;color:var(--gray-600)}
+    .sum-view-note button{background:none;border:none;color:#00897b;font-weight:700;font-size:12px;cursor:pointer;padding:0;text-decoration:underline}
     .sum-list{flex:1;overflow-y:auto;padding:10px 14px}
     /* §8.6a/b — Armado is the number being typed at registration: big, bold, right. Solicitado + Falta beneath the name. */
     .sum-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--gray-200)}
@@ -253,6 +261,7 @@
     .outbox-pill{margin-top:4px;padding:12px;border:none;border-radius:var(--radius);background:#FFF8E1;color:#8a5a00;font-size:13px;font-weight:700;cursor:pointer;text-align:center;box-shadow:var(--shadow-sm)}
     .outbox-pill.ok{background:var(--green-light);color:var(--green-dark)}
     .btn-retry{margin-left:8px;padding:2px 10px;border-radius:6px;border:1px solid #c0392b;background:white;color:#c0392b;font-size:12px;cursor:pointer}
+    .local-backup-chip{background:#fff3f3;color:#b00020;font-size:11px;font-weight:600;text-align:center;padding:4px 10px;margin:0 14px}
 
     /* MODAL */
     .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;padding:20px}
@@ -585,6 +594,7 @@
     </div>
     <div style="height:20px"></div>
     <button class="btn btn-primary" id="start-btn" disabled onclick="startAssembly()">Iniciar Armado →</button>
+    <div id="partial-check-error" style="display:none;margin-top:8px;text-align:center;font-size:12px;color:#b00020"></div>
     <div style="height:10px"></div>
     <button class="btn-ghost" onclick="showScreen('home')">← Volver al inicio</button>
   </div>
@@ -604,6 +614,7 @@
       <span class="list-prog-label" id="list-prog-label" onclick="refreshSemaforo()" style="cursor:pointer" title="Actualizar inventario">0/0</span>
       <button class="finish-hdr-btn" onclick="requestFinish()">Finalizar pedido</button>
     </div>
+    <div id="local-backup-chip" class="local-backup-chip" style="display:none">⚠ Sin respaldo local en este dispositivo — el progreso se guarda sólo en la nube</div>
     <div class="list-filter-seg" id="list-filter-seg">
       <button data-f="all" class="active" onclick="setListFilter('all')">Todos</button>
       <button data-f="pending" onclick="setListFilter('pending')">Pendientes</button>
@@ -626,6 +637,22 @@
     <div class="stat-cell"><div class="stat-n c-orange" id="st-part">0</div><div class="stat-lbl">Parciales</div></div>
     <div class="stat-cell"><div class="stat-n c-red" id="st-skip">0</div><div class="stat-lbl">Faltantes</div></div>
   </div>
+  <div class="sum-controls-row">
+    <div class="list-filter-seg" id="sum-sort-seg" style="margin:0">
+      <button data-s="pos" class="active" onclick="setSumSort('pos')">Posición</button>
+      <button data-s="az" onclick="setSumSort('az')">A–Z</button>
+      <button data-s="estado" onclick="setSumSort('estado')">Estado</button>
+    </div>
+    <button class="sum-search-btn" id="sum-search-btn" onclick="toggleSumSearch()" title="Buscar">🔍</button>
+    <input type="text" id="sum-search-input" class="sum-search-input" placeholder="Buscar producto o código…" oninput="onSumSearchInput()">
+  </div>
+  <div class="list-filter-seg" id="sum-chip-seg" style="margin:0 14px 6px">
+    <button data-c="todos" class="active" onclick="setSumChip('todos')">Todos</button>
+    <button data-c="faltantes" onclick="setSumChip('faltantes')">Faltantes</button>
+    <button data-c="revisar" onclick="setSumChip('revisar')">Revisar</button>
+    <button data-c="sin_armar" onclick="setSumChip('sin_armar')">Sin armar</button>
+  </div>
+  <div class="sum-view-note" id="sum-view-note" style="display:none"></div>
   <div class="sum-list" id="sum-list"></div>
   <div class="sum-actions">
     <div id="sum-upload-status" class="sum-upload-status"></div>
@@ -641,6 +668,7 @@
     <h3 id="m-title">—</h3><p id="m-body">—</p>
     <div class="modal-btns">
       <button class="m-cancel" id="m-cancel">Cancelar</button>
+      <button class="m-cancel" id="m-extra" style="display:none"></button>
       <button class="m-ok" id="m-ok">Continuar</button>
     </div>
   </div>
@@ -773,10 +801,11 @@ async function flushOutbox(manual){
   for(const e of a){
     try{
       if(e.kind==='pick') await pgInsert('picks', JSON.parse(e.body));
+      else if(e.kind==='partial_event') await pgInsert('partial_events', JSON.parse(e.body)); // v2.2/F10
       else if(e.kind==='inventario_dia'){ await sbDelete(e.path).catch(()=>{}); await sbUpload(e.path, e.body, e.contentType||'application/json'); } // delete-then-insert (no anon UPDATE)
       else await sbUpload(e.path, e.body, e.contentType||'text/csv');
       sent++;
-      if(e.kind==='report' && e.hub && e.orderDate) clearPartialSave(e.hub, e.orderDate); // now safe
+      if(e.kind==='report' && e.hub && e.orderDate) clearPartialSave(e.hub, e.orderDate, 'outbox_report'); // now safe
     }catch(err){
       e.tries=(e.tries||0)+1; e.lastError=String(err.message||err);
       const hard=/^(400|401|403|404|409|413|422)[:\s]/.test(String(err.message||''));
@@ -808,10 +837,11 @@ window.addEventListener('online', ()=>flushOutbox());
 
 /* ── STATE ── */
 const S = { hub:'', assembler:'', assemblers:[], items:[], imgDb:{}, results:[], activeIdx:0, listScrollY:0, _archiveData:[], _archiveLoaded:false, _orderLoaded:false, _orderStale:false, orderDate:'', segments:[],
-  ronda:1, baseDate:'', _r1Armado:null, // §3.5 round 2 (complemento)
+  ronda:1, baseDate:'', _r1Armado:null, _recuperado:false, // §3.5 round 2 (complemento); _recuperado = v2.2/F5 rebuilt-from-picks assembly
   // inventory semáforo (§3.4)
   _picks:[], _picksMaxTs:'', _picksDay:'', _lights:{}, _contradicted:{}, _pollTimer:null, _picksReachable:true,
-  _invDia:null, _invDiaDay:'' }; // §2 — today's shared inventory baseline (skuKey → {inv,unidad,hub,uploadedAt})
+  _invDia:null, _invDiaDay:'', // §2 — today's shared inventory baseline (skuKey → {inv,unidad,hub,uploadedAt})
+  _partialCheck:'none' }; // v2.2/F3 — 'pending'|'none'|'found'|'error', gates Iniciar Armado while a partial lookup is in flight
 
 const BC_STATUS  = { PENDING:'pending', SCANNED:'scanned', UNAVAIL:'unavail', WRONGSYS:'wrongsys', NOSYS:'nosys' };
 // §8.4 — Estado is purely the quantity outcome. NOBC/WRONGSYS are no longer produced (the barcode axis
@@ -850,7 +880,8 @@ const FLAG_META = {
   INCOMPLETO:      { icon:'⏳', txt:'Terminó con productos aún pendientes' },
   REPORTE_DIFERIDO:{ icon:'📶', txt:'Reporte encolado sin conexión y subido después' },
   PEDIDO_VIEJO:    { icon:'📅', txt:'La solicitud no era del día en que se armó (lista vieja)' },
-  SIN_TIEMPO:      { icon:'⛔', txt:'Sin tiempo medible — las columnas de tasa no aplican' }
+  SIN_TIEMPO:      { icon:'⛔', txt:'Sin tiempo medible — las columnas de tasa no aplican' },
+  RECUPERADO:      { icon:'🛟', txt:'Reconstruido desde picks — sin tiempos reales, no cuenta para velocidad' } // v2.2/F5
 };
 const FLAG_ORDER = Object.keys(FLAG_META);
 
@@ -902,12 +933,38 @@ async function removeAssembler(idx){
   await saveAssemblers();
 }
 let _staleAck=false; // §4 — the stale-list warning modal must be acknowledged before Iniciar Armado unlocks
+let _partialCheckRetried=false; // v2.2/F3 — has the assembler already tried "Reintentar" once for this hub?
 function updateStartBtn(){
+  const btn=document.getElementById('start-btn');
+  const errEl=document.getElementById('partial-check-error');
   const needsAssembler=S.assemblers.length>0;
-  // Disable start button while a partial is showing — user must choose Continue or Nuevo armado first
-  const blockedByPartial=!!_pendingPartial;
+  const checking=S._partialCheck==='pending';
+  const checkFailed=S._partialCheck==='error';
+  // Disable start button while a partial is showing, or while we can't yet confirm there isn't one —
+  // starting fresh on a hub whose partial state is unknown is the mistake that caused the incident (v2.2/F3)
+  const blockedByPartial=!!_pendingPartial||checking||checkFailed;
   const blockedByStale=S._orderStale && !_staleAck;
-  document.getElementById('start-btn').disabled=blockedByPartial||blockedByStale||!(S.hub&&S._orderLoaded&&(!needsAssembler||S.assembler));
+  const baseReady=S.hub&&S._orderLoaded&&(!needsAssembler||S.assembler);
+  btn.disabled=blockedByPartial||blockedByStale||!baseReady;
+  btn.textContent=checking?'Verificando progreso…':'Iniciar Armado →';
+  if(errEl){
+    if(checkFailed && baseReady && !blockedByStale){
+      errEl.style.display='block';
+      errEl.innerHTML=_partialCheckRetried
+        ? `⚠ No pude verificar si hay progreso guardado · <button class="btn-retry" onclick="forceStartIgnoringPartialCheck()">Empezar de cero de todos modos</button>`
+        : `⚠ No pude verificar si hay progreso guardado · <button class="btn-retry" onclick="retryPartialCheck()">Reintentar</button>`;
+    } else { errEl.style.display='none'; errEl.innerHTML=''; }
+  }
+}
+function retryPartialCheck(){ _partialCheckRetried=true; checkForPartialSave(); }
+function forceStartIgnoringPartialCheck(){
+  showModal(
+    '⚠ Empezar sin verificar',
+    'No se pudo verificar si este hub tiene un armado guardado. Si lo hay, se perderá.',
+    'Empezar de cero de todos modos',
+    'm-danger',
+    ()=>{ S._partialCheck='none'; _pendingPartial=null; updateStartBtn(); startAssembly(); }
+  );
 }
 function pickAssembler(name){
   S.assembler=name;
@@ -1162,9 +1219,10 @@ function pickHub(btn, name){
   btn.classList.add('selected');
   S.hub=name; S.items=[]; S.assembler=''; S._orderLoaded=false;
   document.getElementById('start-btn').disabled=true;
-  // Reset partial notice when hub changes
-  _pendingPartial=null;
+  // Reset partial notice + check state when hub changes (v2.2/F3/F5)
+  _pendingPartial=null; _pendingPartialOtherDevice=false; S._partialCheck='none'; _partialCheckRetried=false; _recoverablePartial=null;
   const pn=document.getElementById('partial-save-notice'); if(pn){ pn.style.display='none'; pn.innerHTML=''; }
+  const pce=document.getElementById('partial-check-error'); if(pce){ pce.style.display='none'; pce.innerHTML=''; }
   // Hide assembler group until order is confirmed loaded
   const agroup=document.getElementById('assembler-group');
   if(agroup) agroup.style.display='none';
@@ -1217,7 +1275,7 @@ async function fetchOrderForHub(hub){
     }
     S._orderLoaded=true; S.orderDate=uploadDate;
     // §3.6: cache the parsed order so a reload in a dead zone isn't fatal
-    try{ localStorage.setItem('calii_order_cache_'+HUB_SLUG[hub], JSON.stringify({orderDate:uploadDate, ronda:S.ronda, baseDate:latestDate, items:S.items})); }catch(_){}
+    trySetLocalStorage('calii_order_cache_'+HUB_SLUG[hub], JSON.stringify({orderDate:uploadDate, ronda:S.ronda, baseDate:latestDate, items:S.items.map(projectOrderRow)})); // v2.2/F7
     await finishOrderLoad(hub);
     if(S._orderStale) showStaleWarning(); // §4 — blocking: must acknowledge before starting
   }catch(e){
@@ -1267,7 +1325,7 @@ async function finishOrderLoad(hub){
     S.assembler='';
   }
   updateStartBtn();
-  checkForPartialSave();
+  await checkForPartialSave(); // v2.2/F3 — must resolve before Iniciar Armado can be judged safe to enable
 }
 
 /* ── COORDINATOR ── */
@@ -1290,9 +1348,10 @@ async function loadCoordinatorScreen(){
   // Fetch order status + reports for all hubs in parallel
   const hubData=await Promise.all(HUBS.map(async hub=>{
     try{
-      const [orderFiles, reportFiles]=await Promise.all([
+      const [orderFiles, reportFiles, partialFiles]=await Promise.all([
         sbList(`orders/${HUB_SLUG[hub]}/`),
-        sbList(`reports/${HUB_SLUG[hub]}/`)
+        sbList(`reports/${HUB_SLUG[hub]}/`),
+        sbList(`partials/${HUB_SLUG[hub]}/`).catch(()=>[]) // v2.2/F5
       ]);
       const csvOrders=orderFiles.filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name));
       const latestOrder=csvOrders[0]||null;
@@ -1300,17 +1359,34 @@ async function loadCoordinatorScreen(){
       const validReports=reportFiles.filter(f=>f.name&&f.name.endsWith('.csv'));
       const activeReports=cutoffDate ? validReports.filter(f=>f.name.slice(0,10)>=cutoffDate) : [];
       const archiveReports=cutoffDate ? validReports.filter(f=>f.name.slice(0,10)<cutoffDate) : validReports;
-      return {hub, latestOrder, cutoffDate, activeReports, archiveReports};
-    }catch(e){ return {hub, latestOrder:null, cutoffDate:null, activeReports:[], archiveReports:[]}; }
+      // v2.2/F5 — offer recovery only when this exact order has no partial and no report yet, but does have picks.
+      // Checked directly against validReports (already fetched) rather than activeReports, whose
+      // filename-date comparison isn't r2-safe (cutoffDate carries a -r2 suffix that never compares
+      // >= against a plain 10-char report date).
+      let canRecover=false, recoverRonda=1;
+      if(cutoffDate){
+        recoverRonda=cutoffDate.endsWith('-r2')?2:1;
+        const baseDate=cutoffDate.replace(/-r2$/,'');
+        const hasReport=recoverRonda===2
+          ? validReports.some(f=>f.name.startsWith(baseDate)&&/_r2_/.test(f.name))
+          : validReports.some(f=>f.name.startsWith(baseDate)&&!/_r2_/.test(f.name));
+        const hasPartial=(partialFiles||[]).some(f=>isPartialFileForDate(f.name, cutoffDate));
+        if(!hasPartial && !hasReport){
+          try{ canRecover=(await pgSelect('picks', `hub=eq.${encodeURIComponent(hub)}&order_date=eq.${encodeURIComponent(cutoffDate)}&ronda=eq.${recoverRonda}&select=sku_key&limit=1`)).length>0; }catch(_){}
+        }
+      }
+      return {hub, latestOrder, cutoffDate, activeReports, archiveReports, canRecover, recoverRonda};
+    }catch(e){ return {hub, latestOrder:null, cutoffDate:null, activeReports:[], archiveReports:[], canRecover:false, recoverRonda:1}; }
   }));
 
   // Render hub rows
-  document.getElementById('coord-hub-list').innerHTML=hubData.map(({hub,latestOrder})=>{
+  document.getElementById('coord-hub-list').innerHTML=hubData.map(({hub,latestOrder,cutoffDate,canRecover,recoverRonda})=>{
     const loaded=!!latestOrder;
     const dateLabel=latestOrder?.name?.replace('.csv','')||'';
     const orderFilePath=latestOrder?`orders/${HUB_SLUG[hub]}/${latestOrder.name}`:'';
     const clearBtn=loaded?`<button class="coord-del-btn" onclick="clearHubOrder('${escH(orderFilePath)}','${escH(hub)}','${escH(dateLabel)}')" title="Eliminar pedido cargado">🗑</button>`:'';
     const noSurtidoBtn=loaded?`<button class="coord-nosurt-btn" onclick="downloadNoSurtido('${escH(hub)}','${escH(dateLabel.replace('-r2',''))}')" title="Descargar SKUs no surtidos (reserva)">📄 No surtido</button>`:'';
+    const recoverBtn=canRecover?`<button class="coord-del-btn" onclick="coordRecoverPartial('${escH(hub)}','${escH(cutoffDate)}',${recoverRonda})" title="Reconstruir el progreso perdido desde el historial de picks">🛟 Recuperar</button>`:'';
     // counts remembered from this device's last upload (falls back to the date alone)
     let sub='';
     try{ const c=JSON.parse(localStorage.getItem('calii_ordercount_'+HUB_SLUG[hub])||'null'); if(c&&c.date===dateLabel) sub=` · ${c.activos} activos${c.reserva?` · ${c.reserva} reserva`:''}`; }catch(_){}
@@ -1321,7 +1397,7 @@ async function loadCoordinatorScreen(){
       <span class="coord-hub-name">${escH(hub)}${sub?`<span class="coord-hub-sub">${escH(sub)}</span>`:''}</span>
       <span class="coord-hub-badge ${badgeCls}" id="badge-${HUB_SLUG[hub]}">${loaded?`${stale?'⚠':'✓'} ${escH(dateLabel)}`:'Sin pedido'}</span>
       <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
-      ${noSurtidoBtn}${clearBtn}
+      ${noSurtidoBtn}${recoverBtn}${clearBtn}
     </div>`;
   }).join('');
 
@@ -1511,23 +1587,30 @@ function checkSalidaEnvio(items){
     `Este pedido trae Salida/Envío con valores en ${n} SKU. El semáforo de inventario asume que las salidas de armado todavía no están descontadas del sistema. Si eso cambió, avisa antes de confiar en el semáforo.`);
 }
 
+// v2.2/F9 — a coordinator upload is always dated today (orderPath/doUpload). F9a: only THAT date's
+// partial is even at risk, so scope the check to it — an older in-flight multi-day assembly (a
+// different orderDate) is never touched and never needs a warning at all.
 async function checkPartialThenUpload(hub, text, items, badge, fields){
+  const od=todayStr();
+  let partial=null;
   try{
-    const partialFiles=(await sbList(`partials/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.json'));
-    if(partialFiles.length>0){
-      showModal(
-        '⚠ Armado en progreso',
-        `Existe un armado en progreso para ${hub}. Al subir este archivo se borrará el progreso existente.\n\n¿Deseas continuar?`,
-        'Subir y borrar progreso',
-        'm-danger',
-        async ()=>{
-          await Promise.all(partialFiles.map(f=>sbDelete(`partials/${HUB_SLUG[hub]}/${f.name}`).catch(()=>{})));
-          await doUpload(hub, text, items, badge, fields);
-        }
-      );
-      return;
-    }
+    const r=await loadPartialProgress(hub, od);
+    if(r.status==='found') partial=r.partial;
   }catch(_){}
+  if(partial){
+    const done=partial.results.filter(r=>r.status!=='pending').length, total=partial.results.length;
+    const workers=[...new Set(partial.results.filter(r=>r.assembler).map(r=>r.assembler))];
+    const workerStr=workers.length?workers.join(', '):'un armador desconocido';
+    showModal(
+      `⚠ Armado en progreso — ${hub}`,
+      `Hay ${done} de ${total} productos armados por ${workerStr} contra el pedido del ${od}.\n\nSi subes este archivo y borras el progreso, hay que armar el pedido completo otra vez.`,
+      'Subir y borrar progreso',
+      'm-danger',
+      async ()=>{ clearPartialSave(hub, od, 'coordinator_upload', done, total); await doUpload(hub, text, items, badge, fields); },
+      { label:'Subir sin borrar el progreso', onExtra:()=>doUpload(hub, text, items, badge, fields) } // F9c
+    );
+    return;
+  }
   await doUpload(hub, text, items, badge, fields);
 }
 
@@ -1590,6 +1673,7 @@ function showInfoModal(title, body, opts){
   const cancel=document.getElementById('m-cancel');
   if(opts.extra){ cancel.style.display=''; cancel.textContent=opts.extra.label; cancel.onclick=()=>{ closeModal(); opts.extra.fn(); }; }
   else { cancel.style.display='none'; cancel.textContent='Cancelar'; cancel.onclick=closeModal; }
+  document.getElementById('m-extra').style.display='none'; // showModal's 3rd button — not used by this modal variant
   document.getElementById('modal-bg').classList.add('open');
 }
 function showLegend(){
@@ -1741,10 +1825,11 @@ function getReportPath(hub, assemblerSlug='', ronda=1){
 }
 
 /* ── START ── */
+// v2.2/F2 — no pre-delete here. Iniciar Armado is disabled while a partial check is pending or a
+// partial was found (updateStartBtn/F3), so reaching this function means there is nothing to discard;
+// the first savePartialProgress() of the fresh run supersedes anything stale (F1's versioning).
 function startAssembly(){
-  // User chose to start fresh — discard any in-progress partial for this hub
-  if(S.hub){ clearPartialSave(S.hub, S.orderDate); }
-  _pendingPartial=null;
+  _pendingPartial=null; S._recuperado=false;
   const pn=document.getElementById('partial-save-notice'); if(pn){ pn.style.display='none'; pn.innerHTML=''; }
   S.results=S.items.map(item=>{
     const bc=cleanBC(item['Código de barras']);
@@ -2139,7 +2224,18 @@ function summaryRowHtml(r){
     </div>`;
 }
 // Fill the summary screen from a normalized row list. mode 'readonly' hides the live-assembly actions.
+// Part B — module state for the summary screen's sort/filter, independent of the picking list's
+// own _listFilter (B3 constraint 3) and never fed back into _pendingReport/generateCSV (constraint 2).
+let _sumRows=[];
+let _sumSort='pos'; // 'pos'|'az'|'estado' — a stable preference of whoever registers, persisted
+try{ _sumSort=localStorage.getItem('calii_sum_sort')||'pos'; }catch(_){}
+let _sumFilter={q:'', chip:'todos'}; // reset on every screen entry, never persisted
+
 function renderSummaryBody(rows, metaLine, mode){
+  _sumRows=rows;
+  _sumFilter={q:'', chip:'todos'};
+  // B3 constraint 1 — the stat tiles always count the full set; compute them here, once, from the
+  // unfiltered rows, and never touch them again from renderSummaryList.
   const total=rows.length;
   const ok=rows.filter(r=>r.status===ITEM_STATUS.COMPLETED).length;
   const partial=rows.filter(r=>QTY_ISSUE_STATUSES.includes(r.status)).length;
@@ -2152,12 +2248,87 @@ function renderSummaryBody(rows, metaLine, mode){
   document.getElementById('st-ok').textContent=ok;
   document.getElementById('st-part').textContent=partial;
   document.getElementById('st-skip').textContent=skipped;
-  document.getElementById('sum-list').innerHTML=rows.map(summaryRowHtml).join('');
+  const si=document.getElementById('sum-search-input'); if(si){ si.value=''; si.classList.remove('open'); }
+  document.querySelectorAll('#sum-sort-seg button').forEach(b=>b.classList.toggle('active', b.dataset.s===_sumSort));
+  document.querySelectorAll('#sum-chip-seg button').forEach(b=>b.classList.toggle('active', b.dataset.c==='todos'));
+  renderSummaryList();
   const ro=mode==='readonly';
   document.getElementById('btn-seguir').style.display=ro?'none':'';
   document.getElementById('btn-terminar').style.display=ro?'none':'';
   document.getElementById('btn-sum-back').style.display=ro?'':'none';
   if(ro){ const s=document.getElementById('sum-upload-status'); s.textContent=''; s.className='sum-upload-status'; }
+}
+
+function sumRowMatchesChip(r, chip){
+  if(chip==='faltantes') return SKIP_STATUSES.includes(r.status);
+  if(chip==='revisar') return QTY_ISSUE_STATUSES.includes(r.status) || r.bcStatus===BC_STATUS.UNAVAIL || r.bcStatus===BC_STATUS.WRONGSYS;
+  if(chip==='sin_armar') return r.status===ITEM_STATUS.PENDING;
+  return true; // 'todos'
+}
+function sumRowMatchesSearch(r, q){
+  if(!q) return true;
+  if(normName(r.producto||'').includes(normName(q))) return true;
+  return !!(r.bc && r.bc.toLowerCase().includes(q.toLowerCase()));
+}
+const SUM_ESTADO_RANK={ [ITEM_STATUS.SKIPPED]:0, [ITEM_STATUS.SHORTDATE]:0, [ITEM_STATUS.PARTIAL]:1, [ITEM_STATUS.NOBC]:1, [ITEM_STATUS.WRONGSYS]:1,
+  [ITEM_STATUS.SOBRANTE]:2, [ITEM_STATUS.PENDING]:3, [ITEM_STATUS.COMPLETED]:4 };
+function sumPosCompare(a,b){
+  const pa=parsePos(a.pos), pb=parsePos(b.pos);
+  if(pa[0]!==pb[0]) return pa[0]<pb[0]?-1:1;
+  if(pa[1]!==pb[1]) return pa[1]-pb[1];
+  return pa[2]-pb[2];
+}
+// B3 constraint 2 — sorts a COPY for display only. Never S.items, never S.results, never touches
+// _pendingReport/generateCSV's input (built separately in showSummary from the live arrays directly).
+function sortedSumRows(rows){
+  const copy=rows.slice();
+  if(_sumSort==='az') copy.sort((a,b)=>(a.producto||'').localeCompare(b.producto||'','es',{sensitivity:'base',numeric:true}));
+  else if(_sumSort==='estado') copy.sort((a,b)=>{ const d=(SUM_ESTADO_RANK[a.status]??2)-(SUM_ESTADO_RANK[b.status]??2); return d!==0?d:sumPosCompare(a,b); });
+  else copy.sort(sumPosCompare); // 'pos' — default, unchanged
+  return copy;
+}
+function renderSummaryList(){
+  const list=document.getElementById('sum-list');
+  const {q, chip}=_sumFilter;
+  const filtered=sortedSumRows(_sumRows.filter(r=>sumRowMatchesChip(r,chip)&&sumRowMatchesSearch(r,q)));
+  const filtering=!!q||chip!=='todos';
+  const noteEl=document.getElementById('sum-view-note');
+  if(!filtering){ noteEl.style.display='none'; }
+  else{
+    noteEl.style.display='block';
+    noteEl.innerHTML = filtered.length
+      ? `Mostrando ${filtered.length} de ${_sumRows.length} · <button onclick="clearSumFilter()">Ver todos</button>`
+      : `Sin resultados${q?` para "${escH(q)}"`:''} · <button onclick="clearSumFilter()">Ver todos</button>`;
+  }
+  list.innerHTML=filtered.map(summaryRowHtml).join('');
+}
+function setSumSort(key){
+  _sumSort=key;
+  try{ localStorage.setItem('calii_sum_sort', key); }catch(_){}
+  document.querySelectorAll('#sum-sort-seg button').forEach(b=>b.classList.toggle('active', b.dataset.s===key));
+  renderSummaryList();
+}
+function setSumChip(chip){
+  _sumFilter.chip=chip;
+  document.querySelectorAll('#sum-chip-seg button').forEach(b=>b.classList.toggle('active', b.dataset.c===chip));
+  renderSummaryList();
+}
+function toggleSumSearch(){
+  const inp=document.getElementById('sum-search-input');
+  if(inp.classList.toggle('open')) inp.focus();
+  else if(inp.value){ inp.value=''; _sumFilter.q=''; renderSummaryList(); }
+}
+let _sumSearchDebounce=null;
+function onSumSearchInput(){
+  clearTimeout(_sumSearchDebounce);
+  const val=document.getElementById('sum-search-input').value;
+  _sumSearchDebounce=setTimeout(()=>{ _sumFilter.q=val.trim(); renderSummaryList(); }, 120);
+}
+function clearSumFilter(){
+  _sumFilter={q:'', chip:'todos'};
+  const inp=document.getElementById('sum-search-input'); if(inp){ inp.value=''; inp.classList.remove('open'); }
+  document.querySelectorAll('#sum-chip-seg button').forEach(b=>b.classList.toggle('active', b.dataset.c==='todos'));
+  renderSummaryList();
 }
 // live S.results row → normalized summary row
 function liveSummaryRow(item, r){
@@ -2188,7 +2359,9 @@ function showSummary(){
   const aslug=getAssemblersSlug(results, assembler);
   const {path, suffix}=getReportPath(hub, aslug, ronda);
   const {csv}=generateCSV(items, results, hub, assembler, suffix, {ronda, r1Armado});
-  _pendingReport={ path, csv, items, results, segments, hub, orderDate, ronda };
+  // Part B — built from the live S.items/S.results arrays directly, never from a sorted/filtered
+  // display copy, so the summary's sort and filter (renderSummaryList) can never move what uploads.
+  _pendingReport={ path, csv, items, results, segments, hub, orderDate, ronda, recuperado:S._recuperado }; // v2.2/F5
 
   document.getElementById('sum-upload-status').textContent='';
   document.getElementById('sum-upload-status').className='sum-upload-status';
@@ -2301,7 +2474,7 @@ function closeFinishedSummary(){
 // "Terminar armado" — now the upload happens here
 function finalizeAssembly(){
   if(!_pendingReport){ newOrder(); return; }
-  const {path, csv, items, results, segments, hub, orderDate, ronda}=_pendingReport;
+  const {path, csv, items, results, segments, hub, orderDate, ronda, recuperado}=_pendingReport;
   saveToHistory(); // localStorage belt-and-braces, only on real finish
   const statusEl=document.getElementById('sum-upload-status');
   const finishBtn=document.getElementById('btn-terminar');
@@ -2325,19 +2498,20 @@ function finalizeAssembly(){
       return;
     }
     if(outcome==='uploaded'){
-      clearPartialSave(hub, orderDate);
-      uploadMetricsSidecar(path, items, results, segments, hub, orderDate, false, ronda);
+      const _done=results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
+      clearPartialSave(hub, orderDate, 'report_uploaded', _done, results.length);
+      uploadMetricsSidecar(path, items, results, segments, hub, orderDate, false, ronda, recuperado);
       statusEl.className='sum-upload-status ok';
       statusEl.textContent='✅ Reporte guardado correctamente';
     } else {
-      uploadMetricsSidecar(path, items, results, segments, hub, orderDate, true, ronda);
+      uploadMetricsSidecar(path, items, results, segments, hub, orderDate, true, ronda, recuperado);
       startOutboxTimer();
       statusEl.className='sum-upload-status queued';
       statusEl.textContent='📶 Sin conexión — el reporte se enviará solo al reconectar';
     }
     _pendingReport=null;
     finishBtn.textContent='Listo →';
-    finishBtn.onclick=()=>newOrder(outcome==='queued');
+    finishBtn.onclick=()=>newOrder(outcome==='uploaded'?{clearPartial:true}:undefined);
     finishBtn.disabled=false;
   }
   attemptUpload();
@@ -2486,6 +2660,7 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
   if(skusTotal<FLAG_MIN_SKUS) flags.push('PEDIDO_CHICO');
   if(results.some(r=>!r.status||r.status===ITEM_STATUS.PENDING)) flags.push('INCOMPLETO');
   if(opts.deferred) flags.push('REPORTE_DIFERIDO');
+  if(opts.recuperado) flags.push('RECUPERADO'); // v2.2/F5
   // §4 — the order's upload date isn't the day it was assembled (a stale list). ronda 2 is exempt (a
   // complemento is generated fresh off an older base by design).
   if(opts.ronda!==2 && opts.orderDate && first && String(opts.orderDate).slice(0,10)!==localDateStr(first)) flags.push('PEDIDO_VIEJO');
@@ -2510,21 +2685,29 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
   const rojosNoEncontrados=skipRows.filter(r=>r.luzAlSkip==='rojo').length;
   const verdesNoEncontrados=skipRows.filter(r=>r.luzAlSkip==='verde').length; // consumption the app can't see
 
+  // v2.2/F5 — a rebuilt assembly's wall-clock is one synthetic first→last-pick span, not measured
+  // sessions; counts (completo/sobrante/parcial/faltante) are exact and stay in, but the timing-derived
+  // rate columns would silently treat that span as a real picking rate, so they're excluded here.
+  const recuperado=!!opts.recuperado;
+
   return {
     v:2, hub, fecha:localDateStr(now), armadores, orderDate:opts.orderDate||'', ronda:opts.ronda||1,
-    skusTotal, skusArmados, minutosReloj, minutosActivos, skusHrReloj, skusHrActivo,
-    segMedianoPorSku, faltantes, fechaCorta, parciales, sobrantes,
+    skusTotal, skusArmados,
+    minutosReloj: recuperado?null:minutosReloj, minutosActivos: recuperado?null:minutosActivos,
+    skusHrReloj: recuperado?null:skusHrReloj, skusHrActivo: recuperado?null:skusHrActivo,
+    segMedianoPorSku: recuperado?null:segMedianoPorSku,
+    faltantes, fechaCorta, parciales, sobrantes,
     pctCompleto, pctParcial, pctSobrante, pctFaltante, pctSurtido,
-    porArmador, flags, segments:(segments||[]),
+    porArmador, flags, segments:(segments||[]), recuperado,
     luzAlSkip, faltantesRapidos, faltantesDesmentidos, desmentidoPor, invAmbiguos, rojosEncontrados, rojosNoEncontrados, verdesNoEncontrados,
     generatedAt:now.toISOString()
   };
 }
 
 // Sidecar next to the report: metrics/{hub-slug}/{same stem}.json — fire-and-forget, never blocks the UI
-function uploadMetricsSidecar(reportPath, items, results, segments, hub, orderDate, deferred=false, ronda=1){
+function uploadMetricsSidecar(reportPath, items, results, segments, hub, orderDate, deferred=false, ronda=1, recuperado=false){
   try{
-    const m=computeOrderMetrics(items, results, segments, hub, {orderDate, deferred, ronda});
+    const m=computeOrderMetrics(items, results, segments, hub, {orderDate, deferred, ronda, recuperado});
     const mPath=reportPath.replace(/^reports\//,'metrics/').replace(/\.csv$/,'.json');
     sbUpload(mPath, JSON.stringify(m), 'application/json').catch(e=>{
       if(isNetErr(e)) outboxAdd({kind:'metrics', path:mPath, body:JSON.stringify(m), contentType:'application/json'});
@@ -2790,6 +2973,11 @@ async function loadPicks(){
 async function pollPicks(){
   // §3 Fix B — the calendar day rolled over while the list stayed open. Reload from scratch so today's
   // consumption isn't summed onto yesterday's buffer (which collapses `disponible` and paints false reds).
+  // v2.2/F11 — this must re-derive S._picks/S._lights only. Never touch S.results, S.segments or the
+  // partial here: `order_date` (recovery/partial identity) and `fecha` (today, the semáforo's own key)
+  // are deliberately different axes — see armadoCH-v2.1-plan.md §1. A missing inventario_dia/<today>.json
+  // (loadInvDia → S._invDia=null) is handled by itemInventario falling back to the order row's own
+  // "Inventario hub saliente" value, never to an implied zero.
   if(S._picksDay && S._picksDay!==todayStr()){ await loadPicks(); loadInvDia(); updateLightChips(); return; }
   if(!S._picksReachable){ await loadPicks(); if(!S._picksReachable){ return; } updateLightChips(); return; }
   try{
@@ -2962,6 +3150,20 @@ function recordPick(idx){
   });
 }
 
+// v2.2/F10 — one row on every partial save/clear/restore, so the next incident is a ten-second query
+// instead of the ranked-guesswork §3 had to fall back to. Fire-and-forget through the existing outbox.
+function recordPartialEvent(hub, orderDate, ronda, action, reason, done, total){
+  const row={
+    hub, order_date:orderDate||null, ronda:ronda||1, action, reason:reason||null,
+    armador:S.assembler||null, done:(done!=null?done:null), total:(total!=null?total:null),
+    device_id:getDeviceId(), ts:new Date().toISOString()
+  };
+  pgInsert('partial_events', row).catch(e=>{
+    if(isNetErr(e)){ outboxAdd({kind:'partial_event', body:JSON.stringify(row)}); startOutboxTimer(); }
+    else console.warn('partial_events insert failed:', e);
+  });
+}
+
 // Poll-safe row updates — never touches an open panel, never re-partitions the list
 function updateLightChips(){
   S.items.forEach((item,i)=>{
@@ -3096,9 +3298,25 @@ async function loadInvToday(){
     ? conflicts.map(s=>`<div class="invrow"><b>${escH(s.producto)}</b><span>Inv ${s.inv} · pedido ${s.pedido} en ${s.hubs} hub${s.hubs>1?'s':''} · <span style="color:var(--red)">faltan ${_round1(s.faltan)}</span>${s.viejo?' · <span style="color:var(--orange)">incluye pedido viejo</span>':''}</span></div>`).join('')
     : '<div class="coord-empty">Ningún SKU con stock disputado.</div>') + sinInvNote;
 
+  // v2.2/F10 — the last 20 partial_events rows, so "why did this partial disappear" is a query, not guesswork.
+  let partialEvents=null;
+  try{ partialEvents=await pgSelect('partial_events','order=ts.desc&limit=20&select=hub,order_date,ronda,action,reason,armador,done,total,ts'); }catch(_){}
+  const EVENT_ICON={saved:'💾',cleared:'🗑',restored:'🛟'};
+  const EVENT_REASON_LABEL={discard_button:'Empezar de cero',report_uploaded:'Reporte subido',outbox_report:'Reporte (cola offline)',coordinator_upload:'Subida de coordinador',rebuild_from_picks:'Reconstruido desde picks'};
+  let eventsHtml;
+  if(partialEvents===null) eventsHtml='<div class="coord-empty">Tabla de partial_events inalcanzable.</div>';
+  else if(!partialEvents.length) eventsHtml='<div class="coord-empty">Sin eventos registrados todavía.</div>';
+  else eventsHtml=partialEvents.map(ev=>{
+    const hora=ev.ts?new Date(ev.ts).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+    const cnt=(ev.done!=null&&ev.total!=null)?` · ${ev.done}/${ev.total}`:'';
+    const reason=ev.reason?` · ${escH(EVENT_REASON_LABEL[ev.reason]||ev.reason)}`:'';
+    return `<div class="invrow"><b>${EVENT_ICON[ev.action]||''} ${escH(ev.hub||'')}</b><span>${escH(ev.order_date||'')}${cnt}${reason}${ev.armador?' · '+escH(ev.armador):''} · ${escH(hora)}</span></div>`;
+  }).join('');
+
   body.innerHTML=`
     <div class="invsub-title">⚠️ Conflictos de inventario — hoy</div>${confHtml}
-    <div class="invsub-title" style="margin-top:16px">📭 Faltantes de hoy</div>${faltHtml}`;
+    <div class="invsub-title" style="margin-top:16px">📭 Faltantes de hoy</div>${faltHtml}
+    <div class="invsub-title" style="margin-top:16px">📜 Últimos eventos de partials</div>${eventsHtml}`;
 }
 
 // §8.8 — one CSV per day: real faltantes only, sorted by Posición armado so the CH is walked in a single pass.
@@ -3572,7 +3790,7 @@ function saveAndExit(){
   const total=S.items.length;
   _pendingPartial=null;
   _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S._orderStale=false; _staleAck=false; S.orderDate=''; S.segments=[];
-  S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
+  S.ronda=1; S.baseDate=''; S._r1Armado=null; S._recuperado=false; _pendingReport=null;
   stopPicksPoll(); S._picks=[]; S._picksDay=''; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
@@ -3590,7 +3808,7 @@ function exitKeepingPartial(){
   closeOpenSegment(); savePartialProgress(); // flush the closed segment into the kept partial
   _pendingPartial=null;
   _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S._orderStale=false; _staleAck=false; S.orderDate=''; S.segments=[];
-  S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
+  S.ronda=1; S.baseDate=''; S._r1Armado=null; S._recuperado=false; _pendingReport=null;
   stopPicksPoll(); S._picks=[]; S._picksDay=''; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
@@ -3602,13 +3820,15 @@ function exitKeepingPartial(){
 }
 
 /* ── NEW ORDER ── */
-// keepPartial=true when the report was only queued offline — flushOutbox() clears it once it lands
-function newOrder(keepPartial){
+// v2.2/F2 — destructive by exception, not by default. newOrder() always keeps the partial; only the
+// post-report call site (finalizeAssembly, once the report has actually landed) passes clearPartial.
+function newOrder(opts){
+  const clearPartial=!!(opts&&opts.clearPartial===true);
   const _hub=S.hub, _orderDate=S.orderDate;
-  if(_hub && keepPartial!==true) clearPartialSave(_hub, _orderDate);
+  if(_hub && clearPartial) clearPartialSave(_hub, _orderDate, null, null, null, {silent:true}); // already logged by finalizeAssembly
   _pendingPartial=null;
   _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S._orderStale=false; _staleAck=false; S.orderDate=''; S.segments=[];
-  S.ronda=1; S.baseDate=''; S._r1Armado=null; _pendingReport=null;
+  S.ronda=1; S.baseDate=''; S._r1Armado=null; S._recuperado=false; _pendingReport=null;
   stopPicksPoll(); S._picks=[]; S._picksDay=''; S._lights={}; S._contradicted={};
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>{ b.classList.remove('selected'); b.disabled=false; });
   document.getElementById('fetch-status').className='fetch-status hidden';
@@ -3625,12 +3845,17 @@ function newOrder(keepPartial){
 function showScreen(name){ clearToast(); document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById('screen-'+name).classList.add('active'); if(name!=='list') window.scrollTo(0,0); }
 
 /* ── MODAL ── */
-function showModal(title,body,okLabel,okClass,onOk){
+// v2.2/F9c — optional 6th arg {label, onExtra} adds a third, non-destructive button (e.g. "Subir sin
+// borrar el progreso"). Omitted by every other call site, so existing 5-arg calls are unaffected.
+function showModal(title,body,okLabel,okClass,onOk,extra){
   const cancel=document.getElementById('m-cancel');
   cancel.style.display=''; cancel.textContent='Cancelar'; cancel.onclick=closeModal;
   document.getElementById('m-title').textContent=title; document.getElementById('m-body').textContent=body;
   const ok=document.getElementById('m-ok'); ok.textContent=okLabel; ok.className=okClass||'m-ok';
   ok.onclick=()=>{ closeModal(); onOk(); };
+  const ex=document.getElementById('m-extra');
+  if(extra&&extra.label){ ex.style.display=''; ex.textContent=extra.label; ex.onclick=()=>{ closeModal(); extra.onExtra(); }; }
+  else { ex.style.display='none'; ex.onclick=null; }
   document.getElementById('modal-bg').classList.add('open');
 }
 function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); }
@@ -3650,6 +3875,7 @@ window.addEventListener('beforeunload',e=>{ if(S.items.length>0&&!document.query
 /* ── PARTIAL SAVE (auto-progress) ── */
 const PARTIAL_LS_PREFIX='calii_partial_';
 let _pendingPartial=null;
+let _pendingPartialOtherDevice=false; // v2.2/F6 — the winning copy was saved from a different deviceId
 // Sequence counter — incremented on every save and on every clear.
 // savePartialToSupabase checks that its seq still matches before it POSTs, so a clear (or a newer
 // save) that landed first wins and this save is dropped instead of resurrecting stale data.
@@ -3672,19 +3898,64 @@ function isPartialFileForDate(name, orderDate){
 }
 const PARTIAL_KEEP_VERSIONS=3; // newest N kept per (hub, orderDate); older ones pruned after a successful write
 
+// v2.2/F6 — a random id per browser/device, stamped on every partial save so a resumed session can
+// tell the assembler when the copy they're looking at was continued on a different device.
+const DEVICE_ID_KEY='calii_device_id';
+function getDeviceId(){
+  try{
+    let id=localStorage.getItem(DEVICE_ID_KEY);
+    if(!id){ id='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,10); localStorage.setItem(DEVICE_ID_KEY,id); }
+    return id;
+  }catch(_){ return 'unknown-device'; }
+}
+
+// v2.2/F7 — the only order-row fields ever read anywhere in this app (verified by grepping every
+// item['…']-style access). Projecting to these before persisting cuts the partial/cache payload
+// roughly 5x. If a future feature reads a new order-row column, add it here or resumed sessions
+// will see it as blank.
+const ORDER_ROW_FIELDS=['Producto','Código de barras','Kg/Pz','Solicitud (kg/pz)','Posición armado',
+  'Inventario hub saliente','Vida anaquel usuarios (min. días)','Vida anaquel usuarios (min. fecha)',
+  'Salida (kg/pz)','Envío - Solicitud (#)'];
+function projectOrderRow(item){
+  const out={};
+  for(const k of ORDER_ROW_FIELDS) out[k]=item[k];
+  return out;
+}
+
+// v2.2/F7 — on QuotaExceededError, evict least-critical local caches (cheapest/most-replaceable
+// first) and retry, instead of silently swallowing the failure. Returns whether the write landed.
+function isQuotaErr(e){ return !!e && (e.name==='QuotaExceededError'||e.code===22||e.code===1014); }
+function trySetLocalStorage(key, value){
+  try{ localStorage.setItem(key,value); return true; }catch(e){ if(!isQuotaErr(e)) return false; }
+  try{ localStorage.removeItem('calii_imgdb_cache'); }catch(_){}
+  try{ localStorage.setItem(key,value); return true; }catch(_){}
+  for(const h of HUBS){ if(h!==S.hub){ try{ localStorage.removeItem('calii_order_cache_'+HUB_SLUG[h]); }catch(_){} } }
+  try{ localStorage.setItem(key,value); return true; }catch(_){}
+  try{ localStorage.removeItem(HISTORY_KEY); }catch(_){}
+  try{ localStorage.setItem(key,value); return true; }catch(_){}
+  return false;
+}
+function setLocalBackupChip(failed){
+  S._localBackupFailed=failed;
+  const chip=document.getElementById('local-backup-chip');
+  if(chip) chip.style.display=failed?'block':'none';
+}
+
 function savePartialProgress(){
   if(!S.hub||!S.items.length||!S.orderDate) return;
   if(!S.results.some(r=>r&&r.status!==ITEM_STATUS.PENDING)) return; // nothing resolved yet — no partial worth keeping
   const seq=++_partialSaveSeq;
   const payload={
-    hub:S.hub, items:S.items,
+    hub:S.hub, items:S.items.map(projectOrderRow), // v2.2/F7 — trimmed to the fields anything actually reads
     results:S.results.map(r=>({...r,confirmedAt:r.confirmedAt?r.confirmedAt.toISOString():null})),
     segments:S.segments, // carried so a resumed order keeps its full timing history (§3.1)
     ronda:S.ronda, baseDate:S.baseDate, r1Armado:S._r1Armado, // §3.5 round-2 context
-    savedAt:new Date().toISOString(), orderDate:S.orderDate
+    savedAt:new Date().toISOString(), orderDate:S.orderDate, deviceId:getDeviceId() // v2.2/F6
   };
-  try{ localStorage.setItem(partialKey(S.hub,S.orderDate),JSON.stringify(payload)); }catch(_){}
+  setLocalBackupChip(!trySetLocalStorage(partialKey(S.hub,S.orderDate),JSON.stringify(payload))); // v2.2/F7
   savePartialToSupabase(payload,seq).catch(()=>{});
+  const done=S.results.filter(r=>r&&r.status!==ITEM_STATUS.PENDING).length;
+  recordPartialEvent(S.hub, S.orderDate, S.ronda, 'saved', null, done, S.items.length); // v2.2/F10
 }
 
 // v2.2/F1 — write-before-delete. POST a new versioned file; only after that succeeds do we prune
@@ -3706,50 +3977,87 @@ async function prunePartialVersions(hub, orderDate){
   await Promise.all(stale.map(f=>sbDelete(prefix+f.name).catch(()=>{})));
 }
 
-async function loadPartialProgress(hub, orderDate){
-  // 1. localStorage first (fast, works offline)
+// v2.2/F3 — a 400/404 from Supabase storage's public-object endpoint is a confirmed "doesn't exist";
+// anything else (network failure, 5xx, timeout) is ambiguous and must not be read as "no partial".
+function isPartialNotFoundErr(e){ return /^(400|404)$/.test(String(e&&e.message||'')); }
+
+// Looks only at the remote copy (versioned files, newest that parses first, then the legacy flat
+// file). Returns {found:true, partial} / {found:false}, or throws when the state couldn't be
+// confirmed either way (closes D13's "corrupt write looks like no partial" for the versioned case,
+// since an unreadable newest version falls back to the next-older one).
+async function fetchRemotePartial(hub, orderDate){
+  const files=(await sbList(`partials/${HUB_SLUG[hub]}/`))
+    .filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json'))
+    .sort((a,b)=>b.name.localeCompare(a.name));
+  let sawUnreadable=false;
+  for(const f of files){
+    try{
+      const raw=await sbFetch(`partials/${HUB_SLUG[hub]}/${f.name}`);
+      const p=JSON.parse(raw);
+      if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return {found:true, partial:p};
+      sawUnreadable=true;
+    }catch(_){ sawUnreadable=true; } // corrupt/truncated — fall back to the next-older version
+  }
   try{
-    const raw=localStorage.getItem(partialKey(hub, orderDate));
-    if(raw){ const p=JSON.parse(raw); if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return p; }
-  }catch(_){}
-  // One-time sweep (D5): migrate/remove the pre-v2.2 date-less local key.
-  try{
-    const legacyRaw=localStorage.getItem(legacyPartialKey(hub));
-    if(legacyRaw!==null){
-      localStorage.removeItem(legacyPartialKey(hub));
-      const p=JSON.parse(legacyRaw);
-      if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length){
-        try{ localStorage.setItem(partialKey(hub, orderDate), legacyRaw); }catch(_){}
-        return p;
-      }
-    }
-  }catch(_){}
-  // 2. Supabase (cross-device) — versioned files first; newest one that parses wins (closes D13).
-  try{
-    const files=(await sbList(`partials/${HUB_SLUG[hub]}/`))
-      .filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json'))
-      .sort((a,b)=>b.name.localeCompare(a.name));
-    for(const f of files){
-      try{
-        const raw=await sbFetch(`partials/${HUB_SLUG[hub]}/${f.name}`);
-        const p=JSON.parse(raw);
-        if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return p;
-      }catch(_){} // corrupt/truncated — fall back to the next-older version instead of "no partial"
-    }
-  }catch(_){}
-  // 3. Legacy flat path — pre-v2.2 partials that were never re-saved under the versioned scheme.
-  try{
-    const raw=await sbFetch(partialSbPath(hub, orderDate));
+    const raw=await sbFetch(partialSbPath(hub, orderDate)); // legacy flat path
     const p=JSON.parse(raw);
-    if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return p;
-  }catch(_){}
-  return null;
+    if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) return {found:true, partial:p};
+    sawUnreadable=true;
+  }catch(e){
+    if(!isPartialNotFoundErr(e)) throw e; // couldn't confirm absence — ambiguous
+  }
+  if(sawUnreadable) throw new Error('partial files exist but none were readable'); // known to exist, unconfirmed content
+  return {found:false};
 }
 
-function clearPartialSave(hub, orderDate){
+// v2.2/F3+F6 — always checks both copies (never "local first, remote only on miss"), returns the
+// newer by savedAt, and reports whether it couldn't be determined at all (status:'error') versus
+// a confirmed absence (status:'none'), so the caller can tell "no partial" from "couldn't check".
+async function loadPartialProgress(hub, orderDate){
+  let local=null;
+  try{
+    const raw=localStorage.getItem(partialKey(hub, orderDate));
+    if(raw){ const p=JSON.parse(raw); if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) local=p; }
+  }catch(_){}
+  if(!local){
+    // One-time sweep (D5): migrate/remove the pre-v2.2 date-less local key.
+    try{
+      const legacyRaw=localStorage.getItem(legacyPartialKey(hub));
+      if(legacyRaw!==null){
+        localStorage.removeItem(legacyPartialKey(hub));
+        const p=JSON.parse(legacyRaw);
+        if(p.hub===hub&&p.orderDate===orderDate&&p.items?.length) local=p;
+      }
+    }catch(_){}
+  }
+
+  let remote=null, remoteErr=null;
+  try{
+    const r=await fetchRemotePartial(hub, orderDate);
+    if(r.found) remote=r.partial;
+  }catch(e){ remoteErr=e; }
+
+  if(local && remote){
+    const remoteNewer=(Date.parse(remote.savedAt)||0) > (Date.parse(local.savedAt)||0);
+    const winner=remoteNewer?remote:local;
+    if(remoteNewer){ try{ localStorage.setItem(partialKey(hub,orderDate), JSON.stringify(remote)); }catch(_){} }
+    return {status:'found', partial:winner, fromOtherDevice: remoteNewer && !!remote.deviceId && remote.deviceId!==getDeviceId()};
+  }
+  if(local) return {status:'found', partial:local}; // remote missing/unreachable — local stands as-is (offline case)
+  if(remote){
+    try{ localStorage.setItem(partialKey(hub,orderDate), JSON.stringify(remote)); }catch(_){}
+    return {status:'found', partial:remote, fromOtherDevice: !!remote.deviceId && remote.deviceId!==getDeviceId()};
+  }
+  return {status: remoteErr?'error':'none'};
+}
+
+// v2.2/F10 — reason/done/total are for the partial_events log only; pass {silent:true} for a call
+// site that's a harmless re-clear of something another call site already logged (avoids double rows).
+function clearPartialSave(hub, orderDate, reason, done, total, opts){
   _partialSaveSeq++; // invalidates any in-flight savePartialToSupabase for this hub/date
   if(!orderDate){ console.error('clearPartialSave: orderDate required, got none for hub', hub); return; }
   try{ localStorage.removeItem(partialKey(hub, orderDate)); }catch(_){}
+  if(!(opts&&opts.silent)) recordPartialEvent(hub, orderDate, null, 'cleared', reason||null, done, total);
   (async()=>{
     const prefix=`partials/${HUB_SLUG[hub]}/`;
     let files=[];
@@ -3759,6 +4067,159 @@ function clearPartialSave(hub, orderDate){
   })();
 }
 
+/* ── v2.2/F5 — REBUILD FROM PICKS (the safety net) ──
+   `picks` is an append-only, server-side, outbox-backed record of every confirm. As long as it
+   exists, losing a partial is an inconvenience, not a day of rework. */
+
+// Cheap existence check — lists report filenames only, never downloads/parses one. Uses the same
+// filename-date convention the rest of the app already relies on (report filename starts with the
+// order date it was finished against; see armadoMapForHub).
+async function hasReportForOrderDate(hub, orderDate, ronda){
+  const baseDate=(orderDate||'').replace(/-r2$/,''); // orderDate may carry S.orderDate's -r2 suffix; report filenames never do
+  try{
+    const all=(await sbList(`reports/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')&&f.name.startsWith(baseDate));
+    return ronda===2 ? all.some(f=>/_r2_/.test(f.name)) : all.some(f=>!/_r2_/.test(f.name));
+  }catch(_){ return false; } // can't confirm — err toward still offering recovery rather than hiding it
+}
+
+// Rebuilds a partial-shaped object for (hub, orderDate, ronda) from the order CSV + the picks table.
+// Returns null if there's nothing to rebuild (no picks, or none resolved). Does NOT persist anything —
+// callers decide whether/when to write it (persistRebuiltPartial).
+async function rebuildPartialFromPicks(hub, orderDate, ronda){
+  // S.orderDate (and so picks.order_date + a partial's own orderDate field) already carries a -r2
+  // suffix for round 2 — normalize once here so every caller (bare date, or already-suffixed) matches.
+  const od=orderDate.endsWith('-r2')?orderDate:(ronda===2?orderDate+'-r2':orderDate);
+  // 1. Same filter rules fetchOrderForHub uses, so the rebuilt list matches what the assembler saw.
+  const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${od}.csv`);
+  const parsed=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
+  const requested=parsed.data.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
+  const activos=requested.filter(r=>(parseFloat(r['Inventario hub saliente'])||0)>0);
+  const rows=(ronda===2||!activos.length)?requested:activos;
+  if(!rows.length) return null;
+  const items=sortItems(rows).map(projectOrderRow);
+
+  // 2. Every pick for this (hub, order_date, ronda) — order_date, never fecha: recordPick stamps fecha
+  // with the calendar day, so a multi-day assembly's picks are spread across several fecha values and
+  // only order_date groups them correctly.
+  const q=`hub=eq.${encodeURIComponent(hub)}&order_date=eq.${encodeURIComponent(od)}&ronda=eq.${ronda}&order=ts.asc&select=sku_key,cantidad,senal,armador,ts,seg_busqueda`;
+  const picks=await pgSelect('picks', q);
+  if(!picks.length) return null;
+
+  // 3. Dedupe by sku_key keeping the LAST row by ts (picks arrive ts.asc, so a later write naturally
+  // overwrites an earlier one in the map — a re-confirmed item legitimately overwrites an earlier faltante).
+  const bySku={};
+  for(const p of picks) bySku[p.sku_key]=p;
+
+  // 4. Map onto items by skuKeyOf, deriving status with confirmItem's own rule so a rebuild and a live
+  // session can never disagree.
+  const results=items.map(item=>{
+    const p=bySku[skuKeyOf(item)];
+    const bc=cleanBC(item['Código de barras']);
+    if(!p){
+      return { status:ITEM_STATUS.PENDING, picked:null, bcStatus:bc?BC_STATUS.PENDING:BC_STATUS.NOSYS,
+        scannedBC:null, confirmedAt:null, assembler:null, openedAt:null, firstOpenedAt:null, touches:0, handleSec:null, bcAttempts:0 };
+    }
+    const unit=itemUnit(item);
+    const reqQ=unit==='Kg'?(parseFloat(item['Solicitud (kg/pz)'])||0):Math.ceil(parseFloat(item['Solicitud (kg/pz)'])||0);
+    const tol=unit==='Kg'?0.05:0.5;
+    const picked=Number(p.cantidad)||0;
+    let status;
+    if(p.senal==='fecha_corta')          status=ITEM_STATUS.SHORTDATE;
+    else if(picked===0)                  status=ITEM_STATUS.SKIPPED;
+    else if(Math.abs(picked-reqQ)<=tol)  status=ITEM_STATUS.COMPLETED;
+    else if(picked>reqQ)                 status=ITEM_STATUS.SOBRANTE;
+    else                                  status=ITEM_STATUS.PARTIAL;
+    return {
+      status, picked, bcStatus: picked>0?BC_STATUS.SCANNED:(bc?BC_STATUS.PENDING:BC_STATUS.NOSYS),
+      scannedBC: (picked>0&&bc)?bc:null,
+      confirmedAt: p.ts?new Date(p.ts).toISOString():null,
+      assembler: p.armador||null,
+      // Not recoverable — accepted per §4/F5. Per-item search time IS recovered (seg_busqueda).
+      openedAt:null, firstOpenedAt:null, touches:0,
+      handleSec: (typeof p.seg_busqueda==='number')?p.seg_busqueda:null,
+      bcAttempts:0, _restored:true
+    };
+  });
+  if(!results.some(r=>r.status!==ITEM_STATUS.PENDING)) return null; // nothing resolved — no partial worth offering
+
+  // 5. One synthetic segment spanning first→last pick — real timestamps, but no reconstructed gaps
+  // (§4/F5 — excluded from segMedianoPorSku/velocity via the RECUPERADO flag, never from the counts).
+  const tss=picks.map(p=>Date.parse(p.ts)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  const segments=tss.length ? [{start:new Date(tss[0]).toISOString(), end:new Date(tss[tss.length-1]).toISOString(), assembler:null}] : [];
+
+  return {
+    hub, items, results, segments, ronda, baseDate:od.replace(/-r2$/,''), r1Armado:null,
+    savedAt:new Date().toISOString(), orderDate:od, deviceId:getDeviceId(),
+    restoredFrom:'picks' // v2.2/F5
+  };
+}
+
+// Writes a rebuilt partial through the same versioned save path as a live one (F1) — never a
+// one-off direct write that could bypass the write-before-delete guarantee.
+async function persistRebuiltPartial(partial){
+  const seq=++_partialSaveSeq;
+  try{ localStorage.setItem(partialKey(partial.hub, partial.orderDate), JSON.stringify(partial)); }catch(_){}
+  await savePartialToSupabase(partial, seq);
+  const done=partial.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length;
+  recordPartialEvent(partial.hub, partial.orderDate, partial.ronda, 'restored', 'rebuild_from_picks', done, partial.results.length); // v2.2/F10
+}
+
+// Assembler surface — offered (never auto-restored silently) when checkForPartialSave finds no
+// partial but picks exist for the order currently on screen.
+let _recoverablePartial=null;
+async function maybeShowRecoveryCard(hub, orderDate, ronda){
+  _recoverablePartial=null;
+  const notice=document.getElementById('partial-save-notice');
+  if(!notice) return;
+  if(await hasReportForOrderDate(hub, orderDate, ronda)) return; // already finished and reported — nothing lost
+  let partial=null;
+  try{ partial=await rebuildPartialFromPicks(hub, orderDate, ronda); }catch(_){ return; }
+  if(!partial || S.hub!==hub || S.orderDate!==orderDate) return; // guard: hub/order switched while awaiting
+  const done=partial.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length, total=partial.results.length;
+  const workers=[...new Set(partial.results.filter(r=>r.assembler).map(r=>r.assembler))];
+  const workerStr=workers.length?' · '+workers.join(', '):'';
+  const dd=(orderDate||'').slice(0,10).split('-').slice(1).reverse().join('/');
+  _recoverablePartial=partial;
+  notice.innerHTML=`<div class="partial-notice">
+    <div class="partial-notice-title">🛟 Recuperar armado del ${escH(dd)}${escH(workerStr)}</div>
+    <div class="partial-notice-sub">${done} de ${total} productos reconstruidos desde el historial del servidor. Los tiempos no serán exactos; las cantidades sí.</div>
+    <div class="partial-notice-btns">
+      <button class="partial-resume-btn" onclick="runRebuildFromPicks()">🛟 Recuperar armado</button>
+    </div>
+  </div>`;
+  notice.style.display='block';
+}
+async function runRebuildFromPicks(){
+  if(!_recoverablePartial) return;
+  const partial=_recoverablePartial;
+  const notice=document.getElementById('partial-save-notice');
+  if(notice) notice.innerHTML='<div class="partial-notice">Reconstruyendo…</div>';
+  try{
+    await persistRebuiltPartial(partial);
+    _recoverablePartial=null;
+    if(S.hub===partial.hub && S.orderDate===partial.orderDate) await checkForPartialSave(); // re-run — finds the version just written
+  }catch(e){
+    console.warn('rebuild persist failed:', e);
+    toast('❌ No se pudo guardar la reconstrucción. Intenta de nuevo.');
+  }
+}
+
+// Coordinator surface — same rebuild, triggered from the hub row, no engineering needed.
+async function coordRecoverPartial(hub, orderDate, ronda){
+  try{
+    toast('🛟 Reconstruyendo…', 4000);
+    const partial=await rebuildPartialFromPicks(hub, orderDate, ronda||1);
+    if(!partial){ toast('No hay actividad registrada para reconstruir.'); return; }
+    const done=partial.results.filter(r=>r.status!==ITEM_STATUS.PENDING).length, total=partial.results.length;
+    await persistRebuiltPartial(partial);
+    toast(`✓ Recuperado — ${done} de ${total} productos`, 3000);
+    loadCoordinatorScreen();
+  }catch(e){
+    console.warn('coordinator rebuild failed:', e);
+    toast('❌ No se pudo reconstruir el armado.');
+  }
+}
+
 function restoreDates(results){ return results.map(r=>({...r,confirmedAt:r.confirmedAt?new Date(r.confirmedAt):null})); }
 
 async function checkForPartialSave(){
@@ -3766,10 +4227,18 @@ async function checkForPartialSave(){
   const notice=document.getElementById('partial-save-notice');
   if(!notice||!hub||!S._orderLoaded||!orderDate) return;
   notice.style.display='none'; notice.innerHTML='';
-  const partial=await loadPartialProgress(hub, orderDate);
+  S._partialCheck='pending'; updateStartBtn(); // v2.2/F3 — Iniciar Armado stays disabled while this is in flight
+  const {status, partial, fromOtherDevice}=await loadPartialProgress(hub, orderDate);
   // Guard: user may have switched hub or a different order was loaded while we were awaiting
-  if(!partial||S.hub!==hub||S.orderDate!==orderDate) return;
-  _pendingPartial=partial;
+  if(S.hub!==hub||S.orderDate!==orderDate) return;
+  if(status==='error'){ S._partialCheck='error'; updateStartBtn(); return; } // v2.2/F3 — ambiguous, never treat as "no partial"
+  if(status!=='found'||!partial){
+    S._partialCheck='none'; _partialCheckRetried=false; updateStartBtn();
+    maybeShowRecoveryCard(hub, orderDate, S.ronda).catch(()=>{}); // v2.2/F5 — offer to rebuild from picks, never silently
+    return;
+  }
+  S._partialCheck='found'; _partialCheckRetried=false;
+  _pendingPartial=partial; _pendingPartialOtherDevice=!!fromOtherDevice;
   updateStartBtn(); // disables Iniciar Armado while partial is pending
   // Only one assembler configured → pre-select so "Continuar pedido" works in one tap
   if(S.assemblers.length===1 && !S.assembler){
@@ -3784,15 +4253,35 @@ async function checkForPartialSave(){
   const workers=[...new Set(partial.results.filter(r=>r.assembler).map(r=>r.assembler))];
   const workerStr=workers.length?' · '+workers.join(', '):'';
   const needName=S.assemblers.length>1 && !S.assembler;
+  // v2.2/F6 — two people on two phones is supported; make it visible instead of silently overwriting
+  const otherDeviceNote=(fromOtherDevice&&savedTime)?`<br>Continuado en otro dispositivo a las ${savedTime}`:'';
   notice.innerHTML=`<div class="partial-notice">
     <div class="partial-notice-title">📂 Pedido en progreso${workerStr}</div>
-    <div class="partial-notice-sub">${done} de ${total} productos (${pct}%)${savedTime?' · Guardado a las '+savedTime:''}${needName?'<br><b>Selecciona tu nombre abajo para continuar</b>':''}</div>
+    <div class="partial-notice-sub">${done} de ${total} productos (${pct}%)${savedTime?' · Guardado a las '+savedTime:''}${otherDeviceNote}${needName?'<br><b>Selecciona tu nombre abajo para continuar</b>':''}</div>
     <div class="partial-notice-btns">
       <button class="partial-resume-btn" onclick="resumePartialSave()">↩ Continuar pedido</button>
-      <button class="partial-discard-btn" onclick="discardPartialSave()">Nuevo armado</button>
+      <button class="partial-discard-btn" onclick="confirmDiscardPartialSave()">Empezar de cero</button>
     </div>
   </div>`;
   notice.style.display='block';
+}
+
+// v2.2/F4 — name the loss before it happens. "Nuevo armado" read like a neutral navigation choice,
+// which is how a day of work got tapped away; a danger modal with the real counts stands between it now.
+function confirmDiscardPartialSave(){
+  if(!_pendingPartial){ discardPartialSave(); return; }
+  const p=_pendingPartial;
+  const done=p.results.filter(r=>r.status!=='pending').length, total=p.results.length;
+  const workers=[...new Set(p.results.filter(r=>r.assembler).map(r=>r.assembler))];
+  const workerStr=workers.length?workers.join(', '):'un armador desconocido';
+  const dd=(p.orderDate||'').slice(0,10).split('-').slice(1).reverse().join('/');
+  showModal(
+    '⚠ Empezar de cero',
+    `Se perderán los ${done} de ${total} productos ya armados por ${workerStr} el ${dd}.\n\nTendrás que armar todo el pedido otra vez. Esta acción no se puede deshacer.`,
+    'Sí, empezar de cero',
+    'm-danger',
+    discardPartialSave
+  );
 }
 
 function resumePartialSave(){
@@ -3809,12 +4298,13 @@ function resumePartialSave(){
   S.items=_pendingPartial.items;
   S.results=restoreDates(_pendingPartial.results);
   S.ronda=_pendingPartial.ronda||1; S.baseDate=_pendingPartial.baseDate||''; S._r1Armado=_pendingPartial.r1Armado||null;
+  S._recuperado=_pendingPartial.restoredFrom==='picks'; // v2.2/F5 — carries through to the report/metrics sidecar
   // Carry the prior timing history, close any segment left open by a crash/exit, then open a fresh one.
   // The gap between the last segment's end and now (e.g. overnight) is never counted.
   S.segments=Array.isArray(_pendingPartial.segments)?_pendingPartial.segments.map(s=>({...s})):[];
   closeOpenSegment();
   S.segments.push(newSegment());
-  S._orderLoaded=true; _pendingPartial=null;
+  S._orderLoaded=true; _pendingPartial=null; _pendingPartialOtherDevice=false;
   S._picks=[]; S._picksMaxTs=''; S._picksDay=''; S._lights={}; S._contradicted={}; S._picksReachable=true; _revisarRepartitionPending=false; _listFilter='all';
   document.getElementById('partial-save-notice').style.display='none';
   savePartialProgress(); // persist the reopened-segment state immediately
@@ -3825,8 +4315,11 @@ function resumePartialSave(){
 function discardPartialSave(){
   const hub=_pendingPartial?_pendingPartial.hub:S.hub;
   const od=_pendingPartial?_pendingPartial.orderDate:S.orderDate;
-  if(hub) clearPartialSave(hub, od);
-  _pendingPartial=null;
+  const done=_pendingPartial?_pendingPartial.results.filter(r=>r.status!=='pending').length:null;
+  const total=_pendingPartial?_pendingPartial.results.length:null;
+  if(hub) clearPartialSave(hub, od, 'discard_button', done, total);
+  _pendingPartial=null; _pendingPartialOtherDevice=false;
+  S._partialCheck='none'; _partialCheckRetried=false;
   const notice=document.getElementById('partial-save-notice');
   if(notice){ notice.style.display='none'; notice.innerHTML=''; }
   updateStartBtn(); // re-enables Iniciar Armado now that partial is gone
