@@ -427,6 +427,9 @@
     .assembler-select.selected{border-color:var(--green);background:var(--green-light)}
 
     /* PARTIAL SAVE NOTICE */
+    .clock-warn{background:#FDECEA;border:1.5px solid #D32F2F;border-radius:var(--radius-sm);padding:14px 16px}
+    .clock-warn-title{font-size:14px;font-weight:700;color:#B71C1C;margin-bottom:4px}
+    .clock-warn-sub{font-size:12px;color:#7f2b26;line-height:1.45}
     .partial-notice{background:#FFF8E1;border:1.5px solid #FFA000;border-radius:var(--radius-sm);padding:14px 16px}
     .partial-notice-title{font-size:14px;font-weight:700;color:#E65100;margin-bottom:4px}
     .partial-notice-sub{font-size:12px;color:#7a4f00;margin-bottom:12px}
@@ -564,6 +567,7 @@
     <div class="setup-sub">Armado de Pedidos</div>
   </div>
   <div class="setup-body">
+    <div id="clock-warning" style="display:none;margin-bottom:16px"></div>
     <div class="field-group">
       <label class="field-lbl">Selecciona tu hub</label>
       <div class="hub-grid" id="hub-grid">
@@ -726,8 +730,72 @@ const HUBS = Object.keys(HUB_SLUG);
 // One line, one CH — if a second CH ever opens, only this map changes.
 const HUB_CH = {}; HUBS.forEach(h => HUB_CH[h] = 'CH-GDLP');
 
-function localDateStr(d){ const t=d||new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; }
+/* ── FECHA Y HORA — ancladas a Monterrey, nunca a la configuración del teléfono ────────
+   Varios teléfonos venían de fábrica en UTC+8 (Asia/Shanghai) porque nunca se activó la
+   fecha automática. Como todo el cálculo de fechas salía de getDate() del dispositivo, esos
+   equipos generaban reportes con el día siguiente, escribían picks.fecha bajo otra fecha y
+   dejaban el semáforo ciego frente a los demás teléfonos. Dos capas de defensa:
+     1. Zona horaria fija (TZ) — un teléfono en Tokio produce datos idénticos a uno en Monterrey.
+     2. Reloj del servidor (syncClock) — tampoco depende de que la hora del equipo sea correcta.
+   Toda fecha/hora que la app calcule o muestre pasa por aquí. */
+const TZ='America/Monterrey';
+const TZ_FALLBACK_MIN=-360; // México no aplica horario de verano desde 2022 → UTC-6 fijo
+let _fmtDate=null, _fmtHM=null;
+try{
+  _fmtDate=new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'});
+  _fmtHM=new Intl.DateTimeFormat('en-GB',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+  if(_fmtDate.format(new Date(0))!=='1969-12-31'){ _fmtDate=null; _fmtHM=null; } // autoprueba
+}catch(_){ _fmtDate=null; _fmtHM=null; }
+function _mtyParts(t){ // respaldo si el navegador no soporta timeZone en Intl
+  const u=new Date(t.getTime()+TZ_FALLBACK_MIN*60000);
+  return {y:u.getUTCFullYear(),m:u.getUTCMonth()+1,d:u.getUTCDate(),h:u.getUTCHours(),mi:u.getUTCMinutes()};
+}
+
+/* Reloj: se toma del servidor y se corrige la deriva del dispositivo.
+   Las duraciones (handleSec, segmentos) son restas entre dos instantes, así que no se ven
+   afectadas por el desfase — solo se corrige el instante absoluto. */
+let _skewMs=0, _skewKnown=false;
+function serverNow(){ return new Date(Date.now()+_skewMs); }
+function skewMinutes(){ return Math.round(_skewMs/60000); }
+async function syncClock(){
+  try{
+    const t0=Date.now();
+    const r=await fetch(`${SB_URL}/rest/v1/`,{method:'HEAD',headers:{'apikey':SB_KEY}});
+    const h=r.headers.get('Date'); // header CORS-safelisted: siempre legible
+    if(h){
+      const srv=Date.parse(h);
+      if(!isNaN(srv)){ _skewMs=srv+Math.round((Date.now()-t0)/2)-Date.now(); _skewKnown=true; }
+    }
+  }catch(_){ /* sin conexión → se usa el reloj del equipo, con la zona ya anclada */ }
+  try{ renderClockWarning(); }catch(_){}
+}
+
+function localDateStr(d){
+  const t=d||serverNow();
+  if(_fmtDate) return _fmtDate.format(t); // en-CA → "YYYY-MM-DD"
+  const p=_mtyParts(t); return `${p.y}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`;
+}
+function localHM(d){
+  const t=d||serverNow();
+  if(_fmtHM) return _fmtHM.format(t); // "HH:MM" 24 h
+  const p=_mtyParts(t); return `${String(p.h).padStart(2,'0')}:${String(p.mi).padStart(2,'0')}`;
+}
 function todayStr(){ return localDateStr(); }
+
+// Aviso visible cuando el reloj del equipo está desfasado: que el problema se anuncie solo
+// en vez de ensuciar los datos en silencio.
+function renderClockWarning(){
+  const el=document.getElementById('clock-warning'); if(!el) return;
+  const m=skewMinutes();
+  if(!_skewKnown || Math.abs(m)<=5){ el.style.display='none'; el.innerHTML=''; return; }
+  const h=Math.round(Math.abs(m)/60*10)/10;
+  const cuanto = Math.abs(m)<60 ? `${Math.abs(m)} min` : `${h} h`;
+  el.innerHTML=`<div class="clock-warn">
+    <div class="clock-warn-title">⏰ El reloj de este teléfono está ${m>0?'atrasado':'adelantado'} ${cuanto}</div>
+    <div class="clock-warn-sub">Tu armado se va a guardar con la fecha y hora correctas — la app está usando la hora del servidor. Aun así avísale al coordinador para activar <b>Fecha y hora automática</b> en este equipo.</div>
+  </div>`;
+  el.style.display='block';
+}
 function orderPath(hub){ return `orders/${HUB_SLUG[hub]}/${todayStr()}.csv`; }
 
 async function sbUpload(path, content, contentType='text/csv'){
@@ -778,7 +846,7 @@ function outboxRead(){ try{ return JSON.parse(localStorage.getItem(OUTBOX_KEY)||
 function outboxWrite(a){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(a)); }catch(_){} updateOutboxPill(); }
 function outboxAdd(entry){
   const a=outboxRead();
-  a.push({ id:Date.now()+'_'+Math.random().toString(36).slice(2,7), tries:0, createdAt:new Date().toISOString(), ...entry });
+  a.push({ id:Date.now()+'_'+Math.random().toString(36).slice(2,7), tries:0, createdAt:serverNow().toISOString(), ...entry });
   outboxWrite(a);
 }
 // Try the upload now; on a network failure enqueue and resolve 'queued'; a real 4xx rejects.
@@ -984,9 +1052,10 @@ function computeMinExpDate(item){
   const mKey=parts[0].toLowerCase().slice(0,3), day=parseInt(parts[1]);
   const monthIdx=M[mKey];
   if(monthIdx===undefined||isNaN(day)) return null;
-  const now=new Date();
-  let d=new Date(now.getFullYear(),monthIdx,day);
-  if(now-d>60*86400000) d=new Date(now.getFullYear()+1,monthIdx,day);
+  const now=serverNow();
+  const _y=Number(localDateStr(now).slice(0,4)); // año en Monterrey, no el del dispositivo
+  let d=new Date(_y,monthIdx,day);
+  if(now-d>60*86400000) d=new Date(_y+1,monthIdx,day);
   d.setDate(d.getDate()+dias);
   return d;
 }
@@ -1117,12 +1186,12 @@ async function uploadImageDB(input){
     const map=masterviewReduce(await file.text());
     const count=Object.keys(map).length;
     if(count<1000) throw new Error('muy pocas claves — ¿es la exportación de Masterview?');
-    const updatedAt=new Date().toISOString();
+    const updatedAt=serverNow().toISOString();
     await sbDelete('imagedb/latest.json').catch(()=>{});
     await sbUpload('imagedb/latest.json', JSON.stringify({updatedAt, count, map}), 'application/json');
     await sbDelete('imagedb/version.txt').catch(()=>{});
     await sbUpload('imagedb/version.txt', updatedAt, 'text/plain');
-    st.textContent=`✓ ${count.toLocaleString()} claves · ${new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})}`;
+    st.textContent=`✓ ${count.toLocaleString()} claves · ${serverNow().toLocaleDateString('es-MX',{timeZone:TZ,day:'2-digit',month:'2-digit'})}`;
     toast(`✓ Base de imágenes actualizada (${count.toLocaleString()} claves). Los teléfonos la tomarán al abrir la app.`);
   }catch(e){ st.textContent='Error'; toast('❌ '+e.message); }
 }
@@ -1131,7 +1200,7 @@ async function refreshImgDbStatus(){
   try{
     const j=JSON.parse(await sbFetch('imagedb/latest.json'));
     const d=new Date(j.updatedAt);
-    st.textContent=`Última actualización: ${d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'})} · ${(j.count||Object.keys(j.map||{}).length).toLocaleString()} claves`;
+    st.textContent=`Última actualización: ${d.toLocaleDateString('es-MX',{timeZone:TZ,day:'2-digit',month:'2-digit',year:'numeric'})} · ${(j.count||Object.keys(j.map||{}).length).toLocaleString()} claves`;
   }catch(_){ st.textContent='Sin subir — se usa la base incluida en la app'; }
 }
 function setDbStatus(type,msg){
@@ -1534,7 +1603,7 @@ async function doUpload(hub, text, items, badge, fields){
     await sbUpload(orderPath(hub), text);
     // §3.5: keep the FULL request (activos + reserva) verbatim for the round-2 cross-check
     const od=todayStr();
-    const pcBody=JSON.stringify({orderDate:od, hub, uploadedAt:new Date().toISOString(), fields:fields||[], rows:items});
+    const pcBody=JSON.stringify({orderDate:od, hub, uploadedAt:serverNow().toISOString(), fields:fields||[], rows:items});
     sbUploadQueued(`pedido_completo/${HUB_SLUG[hub]}/${od}.json`, pcBody, {kind:'pedido_completo', contentType:'application/json'})
       .catch(e=>console.warn('pedido_completo:',e));
     // §2 — merge this hub's rows into today's shared inventory baseline (most-recent-upload-wins per SKU)
@@ -1555,7 +1624,7 @@ async function doUpload(hub, text, items, badge, fields){
 // from the LATEST upload wins (a fresher snapshot is never worse — see §2). Read-merge-write; the race
 // between two near-simultaneous uploads is tolerable (loser is one hub's rows for one day, re-uploadable).
 async function mergeInventarioDia(hub, items){
-  const day=todayStr(), path=`inventario_dia/${day}.json`, uploadedAt=new Date().toISOString();
+  const day=todayStr(), path=`inventario_dia/${day}.json`, uploadedAt=serverNow().toISOString();
   let skus={};
   try{ const cur=JSON.parse(await sbFetch(path)); if(cur && cur.skus) skus=cur.skus; }catch(_){}
   (items||[]).forEach(item=>{
@@ -1817,7 +1886,7 @@ function getAssemblersSlug(results, fallback=''){
 // assemblerSlug is already-slugified (output of getAssemblersSlug) — no internal slugify applied
 // ronda 2 → reports/{slug}/{date}_r2_{HH-MM}_{Armadores}.csv (§3.5) — R1's path is unchanged
 function getReportPath(hub, assemblerSlug='', ronda=1){
-  const t=new Date(), d=localDateStr(t), hm=t.toTimeString().slice(0,5).replace(':','-');
+  const t=serverNow(), d=localDateStr(t), hm=localHM(t).replace(':','-');
   const aslug=assemblerSlug?'_'+assemblerSlug:'';
   const rTag=ronda===2?'r2_':'';
   const suffix=`_${rTag}${hm}${aslug}`;
@@ -1845,10 +1914,10 @@ function startAssembly(){
 
 /* ── TIMING SEGMENTS (§3.1) — one open segment per working session; the overnight gap between
    two segments is never counted toward either minutes figure ── */
-function newSegment(){ return { start:new Date().toISOString(), end:null, assembler:S.assembler||'' }; }
+function newSegment(){ return { start:serverNow().toISOString(), end:null, assembler:S.assembler||'' }; }
 function closeOpenSegment(){
   const seg=S.segments[S.segments.length-1];
-  if(seg && !seg.end) seg.end=new Date().toISOString();
+  if(seg && !seg.end) seg.end=serverNow().toISOString();
 }
 function computeHandleSec(r){
   if(!r || !r.openedAt) return null;
@@ -1936,7 +2005,7 @@ function openDetail(idx){
   // Timing: every open overwrites openedAt (start of the current handling attempt); count touches
   const _r=S.results[idx];
   if(_r){
-    const _iso=new Date().toISOString();
+    const _iso=serverNow().toISOString();
     _r.openedAt=_iso;
     if(!_r.firstOpenedAt) _r.firstOpenedAt=_iso;
     _r.touches=(_r.touches||0)+1;
@@ -2147,7 +2216,7 @@ function confirmItem(){
   if(qStr===''){ toast('⚠ Ingresa la cantidad a armar'); qField?.focus(); return; }
   const picked=parseFloat(qStr);
   if(isNaN(picked)||picked<0){ toast('⚠ Cantidad inválida'); qField?.focus(); return; }
-  result.confirmedAt=new Date();
+  result.confirmedAt=serverNow();
   result.assembler=S.assembler;
   result.handleSec=computeHandleSec(result);
   result.picked=picked;
@@ -2172,7 +2241,7 @@ function markFaltante(reason){
   r._invAmbiguo=!!(lt0&&lt0.invAmbiguo); // §2b
   r.picked=0; r.bcStatus=BC_STATUS.PENDING;
   r.status=reason==='shortdate'?ITEM_STATUS.SHORTDATE:ITEM_STATUS.SKIPPED;
-  r.confirmedAt=new Date();
+  r.confirmedAt=serverNow();
   r.assembler=S.assembler;
   r.handleSec=computeHandleSec(r);
   collapseDetail(); updateListRow(idx); updateListProgress();
@@ -2348,11 +2417,11 @@ function showSummary(){
   stopPicksPoll();
   const hub=S.hub, assembler=S.assembler, items=S.items, results=S.results, orderDate=S.orderDate, segments=S.segments.slice();
   const ronda=S.ronda, r1Armado=S._r1Armado;
-  const now=new Date();
+  const now=serverNow();
 
   renderSummaryBody(
     items.map((item,i)=>liveSummaryRow(item, results[i])),
-    `${hub}${assembler?' · '+assembler:''} · ${now.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}`,
+    `${hub}${assembler?' · '+assembler:''} · ${now.toLocaleDateString('es-MX',{timeZone:TZ,day:'2-digit',month:'short',year:'numeric'})}`,
     'live'
   );
 
@@ -2520,7 +2589,7 @@ function finalizeAssembly(){
 /* ── CSV GENERATION ── */
 // opts.ronda===2 → round-2 register report (§3.5): only touched SKUs, plus the 3 cumulative-qty columns.
 function generateCSV(items, results, hub, assembler='', fileSuffix='', opts={}){
-  const now=new Date();
+  const now=serverNow();
   const isR2=opts.ronda===2;
   const r1Armado=opts.r1Armado||{};
   if(isR2){ // keep only SKUs the assembler acted on this round
@@ -2533,8 +2602,8 @@ function generateCSV(items, results, hub, assembler='', fileSuffix='', opts={}){
     const r=results[i];
     // Use the moment the item was confirmed; fall back to report-generation time for pending items
     const rowTime=r.confirmedAt||now;
-    const date=rowTime.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
-    const time=rowTime.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    const date=rowTime.toLocaleDateString('es-MX',{timeZone:TZ,day:'2-digit',month:'2-digit',year:'numeric'});
+    const time=rowTime.toLocaleTimeString('es-MX',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
     const unit=item['Kg/Pz']||'Pz', rawQ=parseFloat(item['Solicitud (kg/pz)'])||0;
     const reqQ=unit==='Kg'?rawQ.toFixed(2):Math.ceil(rawQ);
     const pick=r.picked!==null?(unit==='Kg'?Number(r.picked).toFixed(2):Math.round(r.picked)):'';
@@ -2587,7 +2656,7 @@ function _toDate(v){ return v instanceof Date ? v : (v ? new Date(v) : null); }
 // segments: [{start:ISO, end:ISO|null, assembler}]  ·  opts: { orderDate, deferred }
 function computeOrderMetrics(items, results, segments, hub, opts={}){
   const IDLE_MS=IDLE_GAP_MIN*60000, FLAG_MS=FLAG_GAP_MIN*60000;
-  const now=new Date();
+  const now=serverNow();
   const resolved=results.filter(r=>r&&r.status&&r.status!=='pending');
   const actions=resolved.map(r=>_toDate(r.confirmedAt)).filter(Boolean).sort((a,b)=>a-b);
 
@@ -2677,7 +2746,7 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
     const c=r&&r._contradictedBy;
     if(!r||!r._contradicted||!c) return null;
     return { producto:(items[i]&&items[i]['Producto'])||'', armadores:c.armadores||[], hubs:c.hubs||[],
-             hora:c.ts?new Date(c.ts).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):'' };
+             hora:c.ts?new Date(c.ts).toLocaleTimeString('es-MX',{timeZone:TZ,hour:'2-digit',minute:'2-digit'}):'' };
   }).filter(Boolean);
   const pickedRows=results.filter(r=>Number(r.picked)>0);
   const invAmbiguos=results.filter(r=>r&&r._invAmbiguo).length; // §2b — SKUs where a same-day snapshot post-dated a pick
@@ -2804,7 +2873,7 @@ function _metricFilteredSorted(){
   if(arm) rows=rows.filter(m=>(m.armadores||[]).includes(arm));
   if(hub) rows=rows.filter(m=>m.hub===hub);
   if(per>0){
-    const cut=new Date(); cut.setDate(cut.getDate()-per);
+    const cut=serverNow(); cut.setDate(cut.getDate()-per);
     const cutStr=localDateStr(cut);
     rows=rows.filter(m=>(m.fecha||'')>=cutStr);
   }
@@ -3076,7 +3145,7 @@ function recomputeLights(){
     const solicitado=itemSolicitado(item);
     const noEnc=b.noEnc.size;
     const nameJoin=key.startsWith('norm:'); // name-matched SKUs may raise 🟡, never 🔴
-    const hora=b.lastConsTs ? new Date(b.lastConsTs).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '';
+    const hora=b.lastConsTs ? new Date(b.lastConsTs).toLocaleTimeString('es-MX',{timeZone:TZ,hour:'2-digit',minute:'2-digit'}) : '';
     const invFuente=invInfo.fuente; // 'dia' (fresh, today) | 'archivo' (this file's own, maybe stale)
     const invFecha=invInfo.uploadedAt||''; // for 'dia'; the panel shows the file date for 'archivo' (§2e)
     // §2b — a same-day snapshot uploaded AFTER a pick was already recorded on this SKU: can't tell whether
@@ -3116,7 +3185,7 @@ function contradictedInfo(i){
   const c=S._contradicted[i];
   if(!c || typeof c!=='object') return null;
   const names=c.armadores||[], hubs=c.hubs||[];
-  const hora=c.ts?new Date(c.ts).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):'';
+  const hora=c.ts?new Date(c.ts).toLocaleTimeString('es-MX',{timeZone:TZ,hour:'2-digit',minute:'2-digit'}):'';
   const first=names[0]||'Otro armador', multi=names.length>1;
   const who=multi?`${first} y ${names.length-1} más`:`${first}${hubs[0]?` (${hubs[0]})`:''}`;
   const verb=multi?'sí lo encontraron':'sí lo encontró';
@@ -3156,7 +3225,7 @@ function recordPartialEvent(hub, orderDate, ronda, action, reason, done, total){
   const row={
     hub, order_date:orderDate||null, ronda:ronda||1, action, reason:reason||null,
     armador:S.assembler||null, done:(done!=null?done:null), total:(total!=null?total:null),
-    device_id:getDeviceId(), ts:new Date().toISOString()
+    device_id:getDeviceId(), ts:serverNow().toISOString()
   };
   pgInsert('partial_events', row).catch(e=>{
     if(isNetErr(e)){ outboxAdd({kind:'partial_event', body:JSON.stringify(row)}); startOutboxTimer(); }
@@ -3307,7 +3376,7 @@ async function loadInvToday(){
   if(partialEvents===null) eventsHtml='<div class="coord-empty">Tabla de partial_events inalcanzable.</div>';
   else if(!partialEvents.length) eventsHtml='<div class="coord-empty">Sin eventos registrados todavía.</div>';
   else eventsHtml=partialEvents.map(ev=>{
-    const hora=ev.ts?new Date(ev.ts).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+    const hora=ev.ts?new Date(ev.ts).toLocaleString('es-MX',{timeZone:TZ,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
     const cnt=(ev.done!=null&&ev.total!=null)?` · ${ev.done}/${ev.total}`:'';
     const reason=ev.reason?` · ${escH(EVENT_REASON_LABEL[ev.reason]||ev.reason)}`:'';
     return `<div class="invrow"><b>${EVENT_ICON[ev.action]||''} ${escH(ev.hub||'')}</b><span>${escH(ev.order_date||'')}${cnt}${reason}${ev.armador?' · '+escH(ev.armador):''} · ${escH(hora)}</span></div>`;
@@ -3378,7 +3447,7 @@ async function downloadFaltantesDelDia(){
       motivo:p.senal==='fecha_corta'?'Fecha corta':'No se encontró',
       reportes:(reportesByKey[p.sku_key]||{size:1}).size,
       armador:p.armador||'',
-      hora:p.ts?new Date(p.ts).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):''
+      hora:p.ts?new Date(p.ts).toLocaleTimeString('es-MX',{timeZone:TZ,hour:'2-digit',minute:'2-digit'}):''
     };
   }).sort((a,b)=>{
     const pa=parsePos(a.pos), pb=parsePos(b.pos);
@@ -3464,9 +3533,9 @@ async function uploadCierre(input){
     if(!rows.length) throw new Error('sin filas válidas (falta la columna "Final [AUTO]"?)');
     const od=todayStr();
     await sbUpload(`inventario_cierre/${od}.json`,
-      JSON.stringify({uploadedAt:new Date().toISOString(), count:rows.length, rows}), 'application/json');
+      JSON.stringify({uploadedAt:serverNow().toISOString(), count:rows.length, rows}), 'application/json');
     _cierreCache=null;
-    st.textContent=`✓ ${rows.length} SKUs · ${new Date().toLocaleString('es-MX',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`;
+    st.textContent=`✓ ${rows.length} SKUs · ${serverNow().toLocaleString('es-MX',{timeZone:TZ,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`;
     toast(`✓ Inventario de cierre cargado (${rows.length} SKUs)`);
   }catch(e){
     st.textContent='Error';
@@ -3757,7 +3826,7 @@ function saveToHistory(){
     h.push({id:Date.now(),date:today,hub:S.hub,total:S.items.length,
       ok:S.results.filter(r=>r.status===ITEM_STATUS.COMPLETED).length,
       skipped:S.results.filter(r=>SKIP_STATUSES.includes(r.status)).length,
-      time:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),filename,csv});
+      time:now.toLocaleTimeString('es-MX',{timeZone:TZ,hour:'2-digit',minute:'2-digit'}),filename,csv});
     localStorage.setItem(HISTORY_KEY,JSON.stringify(h));
   }catch(e){ console.warn('History save failed:',e); }
 }
@@ -3950,7 +4019,7 @@ function savePartialProgress(){
     results:S.results.map(r=>({...r,confirmedAt:r.confirmedAt?r.confirmedAt.toISOString():null})),
     segments:S.segments, // carried so a resumed order keeps its full timing history (§3.1)
     ronda:S.ronda, baseDate:S.baseDate, r1Armado:S._r1Armado, // §3.5 round-2 context
-    savedAt:new Date().toISOString(), orderDate:S.orderDate, deviceId:getDeviceId() // v2.2/F6
+    savedAt:serverNow().toISOString(), orderDate:S.orderDate, deviceId:getDeviceId() // v2.2/F6
   };
   setLocalBackupChip(!trySetLocalStorage(partialKey(S.hub,S.orderDate),JSON.stringify(payload))); // v2.2/F7
   savePartialToSupabase(payload,seq).catch(()=>{});
@@ -4149,7 +4218,7 @@ async function rebuildPartialFromPicks(hub, orderDate, ronda){
 
   return {
     hub, items, results, segments, ronda, baseDate:od.replace(/-r2$/,''), r1Armado:null,
-    savedAt:new Date().toISOString(), orderDate:od, deviceId:getDeviceId(),
+    savedAt:serverNow().toISOString(), orderDate:od, deviceId:getDeviceId(),
     restoredFrom:'picks' // v2.2/F5
   };
 }
@@ -4248,7 +4317,7 @@ async function checkForPartialSave(){
   }
   const done=partial.results.filter(r=>r.status!=='pending').length, total=partial.results.length;
   const pct=total?Math.round(done/total*100):0;
-  const savedTime=partial.savedAt?new Date(partial.savedAt).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):'';
+  const savedTime=partial.savedAt?new Date(partial.savedAt).toLocaleTimeString('es-MX',{timeZone:TZ,hour:'2-digit',minute:'2-digit'}):'';
   // Show which assemblers have worked on this order so far
   const workers=[...new Set(partial.results.filter(r=>r.assembler).map(r=>r.assembler))];
   const workerStr=workers.length?' · '+workers.join(', '):'';
@@ -4326,6 +4395,8 @@ function discardPartialSave(){
 }
 
 /* ── BOOT ── */
+syncClock(); // ancla el reloj al servidor antes de que se estampe cualquier fecha
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncClock(); });
 loadImageDB();
 loadAssemblers();
 updateOutboxPill();
