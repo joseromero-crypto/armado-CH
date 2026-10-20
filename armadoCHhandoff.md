@@ -81,6 +81,20 @@ BUCKET  = 'solcitudesarmado'  // NOTE: intentional typo — matches actual bucke
 - DELETE policy is required for the report and order delete buttons to work
 - **Important**: there is NO UPDATE policy for anon. Any file that needs to be overwritten (e.g. `assemblers.json`) must be **deleted then re-inserted** — do not rely on `x-upsert:true` for existing files, as Supabase treats upsert of an existing object as UPDATE and will return HTTP 400
 
+### ⚠️ New tables need explicit grants (Supabase change, Oct 2026)
+
+Since **2026-10-30**, Supabase no longer auto-grants Data API access to new tables in the `public` schema (existing tables kept their grants). Any table created after that date — via a migration, the SQL editor, or the dashboard — returns `permission denied` to supabase-js / PostgREST until it is granted explicitly. This also hits anything that rebuilds the schema from scratch (new project, preview branch, local `supabase db reset`). Add the grants in the **same** migration/script that creates the table:
+
+```sql
+grant select on public.your_table to anon;
+grant select, insert, update, delete on public.your_table to authenticated;
+grant select, insert, update, delete on public.your_table to service_role;
+```
+
+Grants only decide whether the API can reach the table; RLS policies still decide which rows. Trim the grants to what the table actually needs (e.g. drop `anon` for a server-only table). Ref: https://github.com/orgs/supabase/discussions/45329
+
+**This project today:** uses Storage only (no tables), so it is unaffected. The v2 plan's `picks` table (`armadoCH-v2-plan.md`) is the first thing that would need grants if it is ever created.
+
 ### Coordinator PIN
 - Stored as a plain-text file at the **root** of the bucket: `coordinator_pin.txt`
 - Content is just the 4-digit PIN, nothing else (e.g. `4821`)
