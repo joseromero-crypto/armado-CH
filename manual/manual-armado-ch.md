@@ -346,7 +346,11 @@ Esta lista es la que ve el armador al elegir su nombre, y es lo que hace que las
 ### Reportes (✅ Armados)
 
 - **Hoy** — los generados desde la última carga de cada hub.
-- **Historial** — todos los anteriores, en gris.
+- **Historial** — todos los anteriores, en gris. Puedes filtrar por hub y por periodo (7, 30, 90 días o todo).
+
+Los dos están **agrupados por la fecha del pedido**, con el día de la semana: *Lunes 19 oct 2026 · ayer —
+5 armados*. Toca el día para abrirlo o cerrarlo. Si un pedido se terminó otro día, el renglón lo dice
+(`· terminado 20/10`).
 
 Cada uno: `10:42 — Diego` con `⬇` descargar, `📋` copiloto de registro, `🗑` borrar.
 

@@ -110,6 +110,14 @@
     .coord-nav button{flex:none;padding:7px 13px;border-radius:20px;border:1.5px solid var(--gray-300);background:white;color:var(--gray-600);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
     .coord-nav button.active{background:var(--green);border-color:var(--green);color:white}
     .coord-page-note{font-size:12px;color:var(--gray-500);margin:0 0 10px}
+    /* v2.3 — Armados grouped by order date */
+    .rep-day{margin-bottom:10px}
+    .rep-day>summary{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 2px;cursor:pointer;list-style:none;border-bottom:2px solid var(--gray-300);margin-bottom:8px}
+    .rep-day>summary::-webkit-details-marker{display:none}
+    .rep-day>summary::before{content:'▸';color:var(--gray-400);margin-right:6px}
+    .rep-day[open]>summary::before{content:'▾'}
+    .rep-day-title{font-size:15px;font-weight:800;color:var(--gray-900);flex:1}
+    .rep-day-count{font-size:12px;font-weight:700;color:var(--gray-500);white-space:nowrap}
     /* hub card: name on its own line, badge + actions beneath — on a phone the single row squeezed the name to "M C" */
     #coord-hub-list .coord-hub-row{flex-wrap:wrap;row-gap:8px}
     #coord-hub-list .coord-hub-name{flex:1 1 100%}
@@ -507,11 +515,17 @@
         <button data-v="historial" onclick="setArmadosView('historial')">Historial</button>
       </div>
       <div id="armados-hoy">
-        <div class="coord-page-note">Reportes de los pedidos cargados ahora.</div>
+        <div class="coord-page-note">Reportes de los pedidos cargados ahora, agrupados por la fecha del pedido.</div>
         <div id="coord-reports"></div>
       </div>
       <div id="armados-historial" style="display:none">
-        <div class="coord-page-note">Reportes de pedidos anteriores.</div>
+        <div class="coord-page-note">Reportes de pedidos anteriores, agrupados por la fecha del pedido.</div>
+        <div class="metrics-filters">
+          <select id="arch-hub" class="mf-sel" onchange="setArchFilter()"><option value="">Todos los hubs</option></select>
+          <select id="arch-days" class="mf-sel" onchange="setArchFilter()">
+            <option value="7">7 días</option><option value="30" selected>30 días</option><option value="90">90 días</option><option value="0">Todo</option>
+          </select>
+        </div>
         <div id="coord-archive-list"><div class="coord-empty">Cargando historial…</div></div>
       </div>
     </section>
@@ -1588,35 +1602,10 @@ function renderPedidosPage(hubData){
 }
 
 function renderArmadosPage(hubData){
-  // Render active reports — round-2 reports sit indented under their round-1 sibling (same hub + date)
+  // Hoy — reports for the orders loaded now, grouped by order date (R2 indented under R1)
   const allActive=hubData.flatMap(({hub,activeReports})=>
-    activeReports.map(f=>({hub, path:`reports/${HUB_SLUG[hub]}/${f.name}`, name:f.name}))
-  ).sort((a,b)=>{
-    const da=a.name.slice(0,10), db=b.name.slice(0,10);
-    if(da!==db) return db.localeCompare(da);
-    if(a.hub!==b.hub) return a.hub.localeCompare(b.hub);
-    const ra=/_r2_/.test(a.name)?1:0, rb=/_r2_/.test(b.name)?1:0;
-    if(ra!==rb) return ra-rb;
-    return b.name.localeCompare(a.name);
-  });
-
-  if(!allActive.length){
-    document.getElementById('coord-reports').innerHTML='<div class="coord-empty">No hay reportes activos todavía.</div>';
-  } else {
-    document.getElementById('coord-reports').innerHTML=allActive.map(r=>{
-      const {label,dateStr,isR2}=reportDisplayInfo(r.name);
-      const dlFilename=`${r.hub.replace(/\s+/g,'_')}_${r.name}`;
-      return `<div class="coord-report-row${isR2?' r2-child':''}">
-        <div class="coord-report-info">
-          <div class="coord-report-hub">${escH(r.hub)}</div>
-          <div class="coord-report-meta">${escH(dateStr)} · ${escH(label)}</div>
-        </div>
-        <button class="coord-del-btn" onclick="openRegistro('${escH(r.path)}','${escH(r.hub)}','${escH(dateStr)}')" title="Copiloto de registro">📋</button>
-        <button class="coord-dl-btn" onclick="downloadRemoteReport('${escH(r.path)}','${escH(dlFilename)}')">⬇ CSV</button>
-        <button class="coord-del-btn" onclick="deleteReport('${escH(r.path)}','${escH(r.hub)}','${escH(label)}')" title="Eliminar">🗑</button>
-      </div>`;
-    }).join('');
-  }
+    activeReports.map(f=>({hub, path:`reports/${HUB_SLUG[hub]}/${f.name}`, name:f.name})));
+  renderReportGroups(document.getElementById('coord-reports'), allActive, {openDays:99, empty:'No hay reportes activos todavía.'});
 
   // Stash archive data for lazy render
   S._archiveData=hubData.flatMap(({hub,archiveReports})=>
@@ -1660,24 +1649,70 @@ function reportDisplayInfo(name){
   return {label:r2Tag+label+finTag, dateStr, finishDate, isR2};
 }
 
-function renderArchive(){
-  const arch=S._archiveData||[];
-  if(!arch.length){
-    document.getElementById('coord-archive-list').innerHTML='<div class="coord-empty">Sin reportes anteriores.</div>';
-    return;
-  }
-  document.getElementById('coord-archive-list').innerHTML=arch.map(r=>{
-    const {label,dateStr}=reportDisplayInfo(r.name);
-    const dlFilename=`${r.hub.replace(/\s+/g,'_')}_${r.name}`;
-    return `<div class="coord-report-row" style="opacity:.7">
+/* v2.3 — reports grouped by ORDER date, one collapsible block per day with its weekday ("Lunes 19 oct 2026").
+   Inside a day: by hub, round 2 indented under its round 1, newest first. Used by both Hoy and Historial. */
+const MES_CORTO=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function dayHeading(ymd){
+  const [y,m,d]=ymd.split('-').map(Number);
+  if(!y||!m||!d) return ymd;
+  let wd=new Date(Date.UTC(y,m-1,d,12)).toLocaleDateString('es-MX',{timeZone:'UTC',weekday:'long'});
+  wd=wd.charAt(0).toUpperCase()+wd.slice(1);
+  const rel = ymd===todayStr() ? ' · hoy' : (ymd===localDateStr(new Date(serverNow().getTime()-86400000)) ? ' · ayer' : '');
+  return `${wd} ${d} ${MES_CORTO[m-1]} ${y}${rel}`;
+}
+function reportRowHtml(r, dim){
+  const {label,isR2,dateStr}=reportDisplayInfo(r.name);
+  const dlFilename=`${r.hub.replace(/\s+/g,'_')}_${r.name}`;
+  return `<div class="coord-report-row${isR2?' r2-child':''}"${dim?' style="opacity:.75"':''}>
       <div class="coord-report-info">
         <div class="coord-report-hub">${escH(r.hub)}</div>
-        <div class="coord-report-meta">${escH(dateStr)} · ${escH(label)}</div>
+        <div class="coord-report-meta">${escH(label)}</div>
       </div>
-      <button class="coord-dl-btn" style="background:var(--gray-500)" onclick="downloadRemoteReport('${escH(r.path)}','${escH(dlFilename)}')">⬇ CSV</button>
+      <button class="coord-del-btn" onclick="openRegistro('${escH(r.path)}','${escH(r.hub)}','${escH(dateStr)}')" title="Copiloto de registro">📋</button>
+      <button class="coord-dl-btn"${dim?' style="background:var(--gray-500)"':''} onclick="downloadRemoteReport('${escH(r.path)}','${escH(dlFilename)}')">⬇ CSV</button>
       <button class="coord-del-btn" onclick="deleteReport('${escH(r.path)}','${escH(r.hub)}','${escH(label)}')" title="Eliminar">🗑</button>
     </div>`;
+}
+// opts: {openDays: how many of the newest days start expanded, dim, empty: message when the list is empty}
+function renderReportGroups(el, list, opts={}){
+  if(!list.length){ el.innerHTML=`<div class="coord-empty">${escH(opts.empty||'Sin reportes.')}</div>`; return; }
+  const byDay={};
+  list.forEach(r=>{ (byDay[reportDisplayInfo(r.name).dateStr]=byDay[reportDisplayInfo(r.name).dateStr]||[]).push(r); });
+  const days=Object.keys(byDay).sort().reverse();
+  el.innerHTML=days.map((day,k)=>{
+    const rows=byDay[day].sort((a,b)=>{
+      if(a.hub!==b.hub) return a.hub.localeCompare(b.hub);
+      const ra=/_r2_/.test(a.name)?1:0, rb=/_r2_/.test(b.name)?1:0;
+      if(ra!==rb) return ra-rb;
+      return b.name.localeCompare(a.name);
+    });
+    const n=rows.filter(r=>!/_r2_/.test(r.name)).length, n2=rows.length-n;
+    const count=`${n} armado${n!==1?'s':''}${n2?` · ${n2} complemento${n2!==1?'s':''}`:''}`;
+    return `<details class="rep-day"${k<(opts.openDays??3)?' open':''}>
+        <summary><span class="rep-day-title">${escH(dayHeading(day))}</span><span class="rep-day-count">${count}</span></summary>
+        ${rows.map(r=>reportRowHtml(r, opts.dim)).join('')}
+      </details>`;
   }).join('');
+}
+// Historial filters (hub · period) — per-session view state, not persisted
+let _archHub='', _archDays=30;
+function renderArchive(){
+  const el=document.getElementById('coord-archive-list');
+  const hubSel=document.getElementById('arch-hub');
+  if(hubSel && hubSel.options.length<=1){
+    hubSel.innerHTML='<option value="">Todos los hubs</option>'+HUBS.map(h=>`<option value="${escH(h)}">${escH(h)}</option>`).join('');
+    hubSel.value=_archHub;
+  }
+  const cut=_archDays>0 ? localDateStr(new Date(serverNow().getTime()-_archDays*86400000)) : '';
+  const list=(S._archiveData||[]).filter(r=>(!_archHub||r.hub===_archHub) && (!cut||reportDisplayInfo(r.name).dateStr>=cut));
+  const total=(S._archiveData||[]).length;
+  renderReportGroups(el, list, {openDays:3, dim:true,
+    empty: total ? 'Ningún reporte con estos filtros.' : 'Sin reportes anteriores.'});
+}
+function setArchFilter(){
+  _archHub=document.getElementById('arch-hub').value;
+  _archDays=parseInt(document.getElementById('arch-days').value)||0;
+  renderArchive();
 }
 
 async function uploadHubCSV(input, hub){

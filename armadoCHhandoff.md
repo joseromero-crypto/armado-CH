@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p2')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p2b')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -288,7 +288,7 @@ Reached from **Finalizar pedido** (`showSummary`, mode `'live'`) or from 📋 Pe
 | Menu | Page id | Content | Loader |
 |---|---|---|---|
 | 📦 Pedidos | `pedidos` | per hub card: name + `N activos · M reserva`, date badge (amber `⚠` if not today, `· 🔄 R2`), `Subir CSV`, `📄 No surtido`, `🛟 Recuperar` (latest order has picks, no partial, no report), `🗑` (`🗑 R1`/`🗑 R2` with a complemento). Cards wrap to two lines on a phone | `renderPedidosPage` |
-| ✅ Armados | `armados` | `Hoy` = reports for the currently loaded orders (filename date ≥ the hub's order date), R2 indented under R1 · `Historial` = everything older, dimmed. Each: `📋` registro, `⬇ CSV`, `🗑` | `renderArmadosPage`, `setArmadosView` |
+| ✅ Armados | `armados` | `Hoy` = reports for the currently loaded orders (filename date ≥ the hub's order date) · `Historial` = everything older, dimmed, with hub + 7/30/90/todo filters (default 30). Both are **grouped by order date** (`renderReportGroups`): one collapsible block per day headed `Lunes 19 oct 2026 · ayer` with `N armados · M complementos`; inside, by hub, R2 indented under R1. Newest 3 days open in Historial. Each row: time — armador (+ `· terminado dd/mm` when finished on a later day), `📋` registro, `⬇ CSV`, `🗑`. Legacy one-date reports group under their finish date | `renderArmadosPage`, `renderArchive`, `setArchFilter`, `setArmadosView` |
 | ☑️ Verificar captura | `verificar` | placeholder until v2.3 Part F | — |
 | 📭 Faltantes | `faltantes` | `📭 Faltantes del día (CSV)` + ⚠️ conflicts (`Inv > 0` and demand across hubs > Inv), 📭 today's faltantes (desmentido markers), 📜 last 20 `partial_events` | `loadInvToday` |
 | 🔄 Cierre | `cierre` | closing-inventory upload, `Revisar` → candidates → `Generar complemento` / `Generar todos` (§9.7) | `refreshCierreStatus` |

@@ -127,6 +127,8 @@ Top of **Cargar pedidos**:
   ```
 - The day is the **order date**. A multi-day order says both dates on its row.
 - Filter: hub · last 7 / 30 / 90 days.
+- ✅ **Built early (2026-10-20, with Phase 2):** day grouping, weekday headings, hub/period filters. Still Phase 3:
+  the per-row `N/M` and ☑️ Capturado chips (need the status data).
 
 ---
 
