@@ -110,6 +110,7 @@
     .coord-nav button{flex:none;padding:7px 13px;border-radius:20px;border:1.5px solid var(--gray-300);background:white;color:var(--gray-600);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
     .coord-nav button.active{background:var(--green);border-color:var(--green);color:white}
     .coord-page-note{font-size:12px;color:var(--gray-500);margin:0 0 10px}
+    .coord-body.wide{max-width:900px}
     /* v2.3 — Armados grouped by order date */
     .rep-day{margin-bottom:10px}
     .rep-day>summary{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 2px;cursor:pointer;list-style:none;border-bottom:2px solid var(--gray-300);margin-bottom:8px}
@@ -146,6 +147,13 @@
     .vc-row-nums{font-size:12px;color:var(--gray-600);margin-top:2px;font-variant-numeric:tabular-nums}
     .vc-row-why{font-size:12px;font-weight:700;color:var(--red);margin-top:3px}
     .vc-row-why.vc-asm{color:var(--orange)}
+    /* v2.3/C2 — Respaldos */
+    .resp-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:white;border-radius:var(--radius-sm);box-shadow:var(--shadow-sm);padding:10px 12px;margin-bottom:6px}
+    .resp-main{flex:1 1 220px;min-width:0}
+    .resp-title{font-size:13px;font-weight:700;color:var(--gray-900)}
+    .resp-sub{font-size:12px;color:var(--gray-600);margin-top:2px}
+    .resp-actions{display:flex;flex-wrap:wrap;gap:6px}
+    .resp-actions .coord-upload-btn{padding:7px 10px;font-size:12px}
     /* v2.3/B2 — morning banner */
     .morning-banner{border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;border:1.5px solid}
     .mb-ok{background:var(--green-light);border-color:var(--green)}
@@ -522,7 +530,6 @@
     <div class="coord-header" style="position:static;box-shadow:none">
       <button class="back-text-btn" onclick="showScreen('home')">←</button>
       <h2>Coordinador</h2>
-      <button class="back-text-btn" onclick="openMetrics()" title="Métricas de armado">📊</button>
       <button class="back-text-btn" onclick="loadCoordinatorScreen()" title="Actualizar">↺</button>
     </div>
     <nav class="coord-nav" id="coord-nav">
@@ -530,6 +537,7 @@
       <button data-p="armados" onclick="showCoordPage('armados')">✅ Armados</button>
       <button data-p="verificar" onclick="showCoordPage('verificar')">☑️ Verificar captura</button>
       <button data-p="faltantes" onclick="showCoordPage('faltantes')">📭 Faltantes</button>
+      <button data-p="metricas" onclick="showCoordPage('metricas')">📊 Métricas</button>
       <button data-p="cierre" onclick="showCoordPage('cierre')">🔄 Cierre</button>
       <button data-p="armadores" onclick="showCoordPage('armadores')">👤 Armadores</button>
       <button data-p="imagenes" onclick="showCoordPage('imagenes')">🖼 Imágenes</button>
@@ -577,6 +585,26 @@
       <div id="invtoday-body" style="margin-top:12px"></div>
     </section>
 
+    <section class="coord-page" id="coord-page-metricas" style="display:none">
+      <div class="coord-section-title" style="margin-top:0">📊 Métricas de armado</div>
+      <div class="metrics-filters">
+        <select id="mf-armador" class="mf-sel" onchange="renderMetrics()"><option value="">Todos los armadores</option></select>
+        <select id="mf-hub" class="mf-sel" onchange="renderMetrics()"><option value="">Todos los hubs</option></select>
+        <select id="mf-periodo" class="mf-sel" onchange="renderMetrics()">
+          <option value="7">7 días</option>
+          <option value="30" selected>30 días</option>
+          <option value="90">90 días</option>
+          <option value="0">Todo</option>
+        </select>
+        <label class="mf-toggle"><input type="checkbox" id="mf-irregulares" onchange="renderMetrics()"> Solo irregulares</label>
+        <button class="mf-dl" onclick="downloadMetricsCSV()">⬇ CSV</button>
+      </div>
+      <div id="metrics-status" class="metrics-status"></div>
+      <div class="metrics-table-wrap">
+        <table class="metrics-table" id="metrics-table"></table>
+      </div>
+    </section>
+
     <section class="coord-page" id="coord-page-cierre" style="display:none">
       <div class="coord-section-title" style="margin-top:0">🔄 Inventario de cierre</div>
       <div class="cierre-box">
@@ -613,33 +641,6 @@
   </div>
 </div>
 
-<!-- METRICS (coordinator) -->
-<div id="screen-metrics" class="screen">
-  <div class="coord-header">
-    <button class="back-text-btn" onclick="showScreen('coordinator');loadCoordinatorScreen()">←</button>
-    <h2>Métricas de armado</h2>
-    <button class="back-text-btn" onclick="loadMetrics(true)" title="Actualizar todo">↺</button>
-  </div>
-  <div class="metrics-body">
-    <div class="metrics-filters">
-      <select id="mf-armador" class="mf-sel" onchange="renderMetrics()"><option value="">Todos los armadores</option></select>
-      <select id="mf-hub" class="mf-sel" onchange="renderMetrics()"><option value="">Todos los hubs</option></select>
-      <select id="mf-periodo" class="mf-sel" onchange="renderMetrics()">
-        <option value="7">7 días</option>
-        <option value="30" selected>30 días</option>
-        <option value="90">90 días</option>
-        <option value="0">Todo</option>
-      </select>
-      <label class="mf-toggle"><input type="checkbox" id="mf-irregulares" onchange="renderMetrics()"> Solo irregulares</label>
-      <button class="mf-dl" onclick="downloadMetricsCSV()">⬇ CSV</button>
-    </div>
-    <div id="metrics-status" class="metrics-status"></div>
-    <div class="metrics-table-wrap">
-      <table class="metrics-table" id="metrics-table"></table>
-    </div>
-  </div>
-</div>
-
 <!-- REGISTRO — copiloto de registro (§3.7) -->
 <div id="screen-registro" class="screen">
   <div class="coord-header">
@@ -652,6 +653,16 @@
     <div class="reg-bar"><div class="reg-bar-fill" id="reg-bar-fill"></div></div>
     <div id="reg-list"></div>
   </div>
+</div>
+
+<!-- RESPALDOS — v2.3/C2, per hub -->
+<div id="screen-respaldos" class="screen">
+  <div class="coord-header">
+    <button class="back-text-btn" onclick="closeRespaldos()">←</button>
+    <h2 id="resp-title">Respaldos</h2>
+    <button class="back-text-btn" onclick="_resp&&openRespaldos(_resp.hub)" title="Actualizar">↺</button>
+  </div>
+  <div class="reg-body" id="resp-body"></div>
 </div>
 
 <!-- SETUP -->
@@ -764,6 +775,9 @@
 <div class="modal-bg" id="modal-bg">
   <div class="modal-box">
     <h3 id="m-title">—</h3><p id="m-body">—</p>
+    <div id="m-typed-wrap" style="display:none;margin:-8px 0 16px">
+      <input id="m-typed" class="assembler-text-input" style="width:100%;text-transform:uppercase" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
     <div class="modal-btns">
       <button class="m-cancel" id="m-cancel">Cancelar</button>
       <button class="m-cancel" id="m-extra" style="display:none"></button>
@@ -1096,6 +1110,7 @@ const FLAG_META = {
   REPORTE_DIFERIDO:{ icon:'📶', txt:'Reporte encolado sin conexión y subido después' },
   PEDIDO_VIEJO:    { icon:'📅', txt:'La solicitud no era del día en que se armó (lista vieja)' },
   SIN_TIEMPO:      { icon:'⛔', txt:'Sin tiempo medible — las columnas de tasa no aplican' },
+  CERRADO_COORDINADOR:{ icon:'🔒', txt:'Cerrado por el coordinador sin terminar de armar' }, // v2.3/C5
   RECUPERADO:      { icon:'🛟', txt:'Reconstruido desde picks — sin tiempos reales, no cuenta para velocidad' } // v2.2/F5
 };
 const FLAG_ORDER = Object.keys(FLAG_META);
@@ -1554,7 +1569,7 @@ async function finishOrderLoad(hub){
 /* ── v2.3/A — COORDINATOR PAGES ──
    One page visible at a time under the top menu. Each page loads its own data when opened; the per-hub lists
    (orders, reports, partials) are fetched once and shared by Pedidos and Armados until the next reload. */
-const COORD_PAGES=['pedidos','armados','verificar','faltantes','cierre','armadores','imagenes'];
+const COORD_PAGES=['pedidos','armados','verificar','faltantes','metricas','cierre','armadores','imagenes'];
 let _coordPage='pedidos';
 try{ const p=localStorage.getItem('calii_coord_page'); if(COORD_PAGES.includes(p)) _coordPage=p; }catch(_){}
 let _coordHubData=null, _coordHubDataP=null, _armadosView='hoy';
@@ -1575,6 +1590,7 @@ async function showCoordPage(name){
     if(on) b.scrollIntoView({block:'nearest', inline:'nearest'});
   });
   document.querySelectorAll('.coord-page').forEach(sec=>{ sec.style.display = sec.id==='coord-page-'+name ? 'block' : 'none'; });
+  document.querySelector('#screen-coordinator .coord-body').classList.toggle('wide', name==='metricas');
   window.scrollTo(0,0);
   if(name==='pedidos'){
     if(!_coordHubData) document.getElementById('coord-hub-list').innerHTML='<div class="coord-empty">Cargando pedidos…</div>';
@@ -1589,6 +1605,7 @@ async function showCoordPage(name){
     try{ renderArmadosPage(await getCoordHubData()); }catch(e){ coordLoadFailed('coord-reports', e); }
   } else if(name==='verificar') vcInit();
   else if(name==='faltantes') loadInvToday();
+  else if(name==='metricas') loadMetrics(false); // ↺ lands here too: lists every sidecar, fetches only new ones
   else if(name==='cierre') refreshCierreStatus();
   else if(name==='armadores'){ await loadAssemblers(); renderAssemblerList(); } // loadAssemblers never throws
   else if(name==='imagenes') refreshImgDbStatus();
@@ -1663,7 +1680,8 @@ async function orderStatus(hub, od, partialFiles, reportFiles){
       if(pi.lastConfirm>rep.ep+60000) return {kind:'progreso', continued:true, ...pi, reportName:rep.name};
     }
     const m=await cachedMetrics(metricsPathForReport(`reports/${HUB_SLUG[hub]}/${rep.name}`));
-    return {kind:'armado', done:m?m.skusArmados:null, total:m?m.skusTotal:null, armadores:m?(m.armadores||[]):[], at:rep.ep, reportName:rep.name};
+    return {kind:'armado', done:m?m.skusArmados:null, total:m?m.skusTotal:null, armadores:m?(m.armadores||[]):[], at:rep.ep, reportName:rep.name,
+      cerrado:!!(m&&(m.flags||[]).includes('CERRADO_COORDINADOR'))};
   }
   if(partial) return partial.unreadable ? {kind:'progreso', unreadable:true} : {kind:'progreso', ...partialInfo(partial)};
   let picks=false;
@@ -1761,6 +1779,7 @@ function whenLabel(ms, ago){
 function statusChipHtml(st){
   if(!st) return '<span class="st-chip st-pend">Sin pedido</span>';
   const nm=(st.done!=null&&st.total!=null)?` ${st.done}/${st.total}`:'';
+  if(st.kind==='armado' && st.cerrado) return `<span class="st-chip st-ok">🔒 Cerrado por coordinador${nm}</span>`;
   if(st.kind==='armado') return st.done!=null&&st.total!=null&&st.done<st.total
     ? `<span class="st-chip st-ok">✅ Armado con pendientes${nm}</span>` : `<span class="st-chip st-ok">✅ Armado${nm}</span>`;
   if(st.kind==='progreso') return `<span class="st-chip st-prog">🟡 ${st.continued?'Continuado después del reporte':'En progreso'}${nm}</span>`;
@@ -1819,7 +1838,10 @@ function renderPedidosPage(hubData){
       ${detail?`<div class="hub-card-detail">${escH(detail)}</div>`:''}
       <div class="hub-card-actions">
         <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
-        ${noSurtidoBtn}${recoverBtn}${clearBtn}
+        ${noSurtidoBtn}${recoverBtn}
+        ${!pendingSt&&status&&(status.kind==='progreso'||status.kind==='perdido')&&!status.unreadable?`<button class="coord-del-btn" onclick="cardCloseOrder('${escH(hub)}')" title="Generar el reporte con lo que se armó">Cerrar como terminado</button>`:''}
+        <button class="coord-nosurt-btn" onclick="openRespaldos('${escH(hub)}')" title="Copias guardadas por 30 días">🗂 Respaldos</button>
+        ${clearBtn}
       </div>
     </div>`;
   }).join('');
@@ -1939,12 +1961,43 @@ function setArchFilter(){
   renderArchive();
 }
 
+// v2.3/C3 — uploading a NEW day over an order that isn't finished hides that order from the assemblers. Stop first,
+// say what would be left behind, and only go ahead when the coordinator types SUBIR. Same-day re-uploads keep their
+// own flow (checkPartialThenUpload).
+async function unfinishedOrderBlock(hub){
+  const slug=HUB_SLUG[hub];
+  const [orderFiles, reportFiles, partFiles]=await Promise.all([sbList(`orders/${slug}/`), sbList(`reports/${slug}/`), sbList(`partials/${slug}/`).catch(()=>[])]);
+  const lo=latestOrderFile(orderFiles);
+  if(!lo || lo.date===todayStr()) return null;
+  const od=lo.r2?`${lo.date}-r2`:lo.date;
+  const st=await orderStatus(hub, od, partFiles.filter(f=>f.name&&f.name.endsWith('.json')), reportFiles.filter(f=>f.name&&f.name.endsWith('.csv')));
+  return st.kind==='armado' ? null : {od, st};
+}
 async function uploadHubCSV(input, hub){
   const file=input.files[0]; if(!file) return;
   input.value='';
+  const text=await file.text();
+  const badge=document.getElementById(`badge-${HUB_SLUG[hub]}`);
+  if(badge){ badge.className='coord-hub-badge uploading'; badge.textContent='Revisando…'; }
+  let stop=null; try{ stop=await unfinishedOrderBlock(hub); }catch(_){}
+  if(stop){
+    if(badge){ badge.className='coord-hub-badge stale'; badge.textContent='Pedido sin terminar'; }
+    const st=stop.st, dd=ddmm(bareOrderDate(stop.od))+(/-r2$/.test(stop.od)?' (complemento)':'');
+    const what = st.kind==='progreso' ? `${st.done!=null?`${st.done} de ${st.total} productos armados`:'Hay avance guardado'}${(st.armadores||[]).length?` · ${st.armadores.join(', ')}`:''}${st.at?` · último guardado ${whenLabel(st.at,true)}`:''}.`
+      : st.kind==='perdido' ? 'Hubo escaneos pero no hay avance guardado.' : 'Nadie lo ha empezado.';
+    showTypedConfirm({ title:`⛔ ${hub} todavía no termina el pedido del ${dd}`,
+      body:`${what}\n\nSi subes el pedido nuevo, los armadores dejarán de ver el del ${dd}. Antes puedes cerrarlo como terminado o revisarlo en Respaldos.`,
+      word:'SUBIR', okLabel:'Subir de todos modos',
+      onOk:()=>{ recordPartialEvent(hub, stop.od, null, 'override', 'coordinator_override', st.done, st.total); processHubUpload(hub, text); },
+      extra:{ label:'Ver respaldos', fn:()=>openRespaldos(hub) } });
+    document.getElementById('m-cancel').onclick=()=>{ closeModal(); resetTypedConfirm(); loadCoordinatorScreen(); };
+    return;
+  }
+  return processHubUpload(hub, text);
+}
+async function processHubUpload(hub, text){
   const badge=document.getElementById(`badge-${HUB_SLUG[hub]}`);
   try{
-    const text=await file.text();
     const parsed=Papa.parse(text,{header:true,dynamicTyping:false,skipEmptyLines:true});
     const items=parsed.data.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
     if(!items.length) throw new Error('CSV sin productos válidos');
@@ -2132,6 +2185,7 @@ function deleteReport(path, hub, label){
 // opts: { extra:{label,fn}, onOk, okLabel } — all optional
 function showInfoModal(title, body, opts){
   opts=opts||{};
+  resetTypedConfirm();
   document.getElementById('m-title').textContent=title;
   document.getElementById('m-body').textContent=body;
   const ok=document.getElementById('m-ok');
@@ -2938,6 +2992,7 @@ async function openFinishedSummary(path, hub){
   renderSummaryBody(rows, `${hub} · ${dateStr} · ${label}`, 'readonly');
 }
 function closeFinishedSummary(){
+  if(_sumReturn==='respaldos'){ _sumReturn=null; showScreen('respaldos'); return; }
   showScreen('setup');
   if(_paOpen) loadPedidosArmados(); // refresh the list in case a report was just added elsewhere
 }
@@ -3131,6 +3186,7 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
   if(skusTotal<FLAG_MIN_SKUS) flags.push('PEDIDO_CHICO');
   if(results.some(r=>!r.status||r.status===ITEM_STATUS.PENDING)) flags.push('INCOMPLETO');
   if(opts.deferred) flags.push('REPORTE_DIFERIDO');
+  if(opts.cerrado) flags.push('CERRADO_COORDINADOR'); // v2.3/C5
   if(opts.recuperado) flags.push('RECUPERADO'); // v2.2/F5
   // §4 — the order's upload date isn't the day it was assembled (a stale list). ronda 2 is exempt (a
   // complemento is generated fresh off an older base by design).
@@ -3176,9 +3232,9 @@ function computeOrderMetrics(items, results, segments, hub, opts={}){
 }
 
 // Sidecar next to the report: metrics/{hub-slug}/{same stem}.json — fire-and-forget, never blocks the UI
-function uploadMetricsSidecar(reportPath, items, results, segments, hub, orderDate, deferred=false, ronda=1, recuperado=false){
+function uploadMetricsSidecar(reportPath, items, results, segments, hub, orderDate, deferred=false, ronda=1, recuperado=false, cerrado=false){
   try{
-    const m=computeOrderMetrics(items, results, segments, hub, {orderDate, deferred, ronda, recuperado});
+    const m=computeOrderMetrics(items, results, segments, hub, {orderDate, deferred, ronda, recuperado, cerrado});
     const mPath=reportPath.replace(/^reports\//,'metrics/').replace(/\.csv$/,'.json');
     sbUpload(mPath, JSON.stringify(m), 'application/json').catch(e=>{
       if(isNetErr(e)) outboxAdd({kind:'metrics', path:mPath, body:JSON.stringify(m), contentType:'application/json'});
@@ -3213,7 +3269,6 @@ const METRIC_COLS=[
   { key:'seg',   label:'Seg/SKU',     kind:'num',  get:m=>m.segMedianoPorSku||0 }
 ];
 
-function openMetrics(){ showScreen('metrics'); loadMetrics(false); }
 
 async function loadMetrics(force){
   const statusEl=document.getElementById('metrics-status');
@@ -4393,6 +4448,220 @@ function vcDownloadCSV(){
   triggerDownload(csv, `verificacion_${b.hub.replace(/\s+/g,'_')}_${bareOrderDate(b.orderDate)}.csv`);
 }
 
+/* ── v2.3/C5 — CERRAR COMO TERMINADO ──
+   The coordinator turns an unfinished (or rebuilt) order into its report as it stands — e.g. only half was assembled
+   in time and it has to go out. Same report shape and path as finalizeAssembly; pending rows stay "Pendiente" (the
+   registro copilot already drops them). Archive-first clear, flags INCOMPLETO + CERRADO_COORDINADOR. */
+function confirmCloseOrder(hub, partial, onDone){
+  const res=partial.results||[], done=res.filter(r=>r&&r.status!=='pending').length, total=res.length;
+  const who=[...new Set(res.map(r=>r&&r.assembler).filter(Boolean))];
+  const od=partial.orderDate, dd=ddmm(bareOrderDate(od))+(/-r2$/.test(od)?' (complemento)':'');
+  showTypedConfirm({ title:`Cerrar como terminado: ${hub}, pedido del ${dd}`,
+    body:`Se generará el reporte con ${done} de ${total} productos armados${who.length?` por ${who.join(', ')}`:''}. Los ${total-done} sin armar quedan como Pendiente y no se capturan en Retool.\n\nSi alguien lo está armando ahora mismo, avísale que se detenga.\n\nSe guarda un respaldo por ${RESPALDO_DAYS} días.`,
+    word:'CERRAR', okLabel:'Cerrar', onOk:async()=>{ const ok=await closeOrderAsFinished(hub, partial); if(ok&&onDone) onDone(); } });
+}
+async function closeOrderAsFinished(hub, partial){
+  const items=partial.items, results=restoreDates(partial.results), od=partial.orderDate;
+  const ronda=partial.ronda||(/-r2$/.test(od)?2:1);
+  const segments=(Array.isArray(partial.segments)?partial.segments:[]).map(sg=>({...sg, end:sg.end||sg.start})); // an open segment must not run to "now"
+  const {path, suffix}=getReportPath(hub, getAssemblersSlug(results,'Coordinador'), ronda, od);
+  const {csv}=generateCSV(items, results, hub, 'Coordinador', suffix, {ronda, r1Armado:partial.r1Armado||null});
+  toast('Generando reporte…', 3000);
+  let outcome;
+  try{ outcome=await sbUploadQueued(path, csv, {kind:'report', hub, orderDate:od, contentType:'text/csv'}); }
+  catch(e){ toast('❌ No se pudo subir el reporte: '+e.message, 4000); return false; }
+  const done=results.filter(r=>r.status!=='pending').length;
+  if(outcome==='uploaded') await clearPartialSave(hub, od, 'cerrado_coordinador', done, results.length, {payload:partial});
+  uploadMetricsSidecar(path, items, results, segments, hub, od, outcome!=='uploaded', ronda, partial.restoredFrom==='picks', true);
+  toast(outcome==='uploaded'?`✓ Pedido cerrado — reporte con ${done}/${results.length}`:'📶 Sin conexión — el reporte se enviará solo', 3500);
+  return true;
+}
+// From a hub card: the current order's saved progress, or — when it was lost — a rebuild from the picks
+async function cardCloseOrder(hub){
+  const h=(_coordHubData||[]).find(x=>x.hub===hub); if(!h||!h.currentOd) return;
+  let partial=null;
+  try{
+    if(h.status&&h.status.kind==='perdido') partial=await rebuildPartialFromPicks(hub, h.currentOd, h.recoverRonda);
+    else partial=(await fetchRemotePartial(hub, h.currentOd, h._parts)).partial||null;
+  }catch(e){ toast('❌ '+(e.message||e), 4000); return; }
+  if(!partial){ toast('No hay avance para cerrar'); return; }
+  confirmCloseOrder(hub, partial, ()=>loadCoordinatorScreen());
+}
+
+/* ── v2.3/C2 — RESPALDOS (per hub) ──
+   Everything kept for this hub: the saved progress of each order right now, copies kept for 30 days (finished,
+   discarded, replaced, deleted orders/reports), progress that was lost but can be rebuilt from the scans
+   (needs the picks_por_pedido view), and the partial-events log. */
+const RESP_LABEL={ en_progreso:'🟡 En progreso (último guardado)', terminado:'✅ Terminado — reporte subido', empezar_de_cero:'⚠️ Borrado por armador ("Empezar de cero")',
+  subida_coordinador:'⚠️ Borrado al subir un pedido encima', pedido_borrado:'📄 Pedido borrado', pedido_reemplazado:'📄 Pedido reemplazado (se subió otro del mismo día)',
+  reporte_borrado:'📋 Reporte borrado', verificacion_reemplazada:'☑️ Verificación reemplazada', cerrado_por_coordinador:'🔒 Cerrado por coordinador' };
+const RESP_EVENT_LABEL={discard_button:'Empezar de cero',report_uploaded:'Reporte subido',outbox_report:'Reporte (cola offline)',coordinator_upload:'Subida de coordinador',
+  rebuild_from_picks:'Reconstruido desde escaneos',leftover_after_report:'Sobrante de un pedido terminado',cerrado_coordinador:'Cerrado por coordinador',
+  coordinator_override:'Subió encima de un pedido sin terminar',respaldo:'Restaurado de respaldo'};
+const RESP_PAGE=15;
+let _resp=null, _sumReturn=null;
+async function openRespaldos(hub){
+  showScreen('respaldos');
+  document.getElementById('resp-title').textContent='Respaldos — '+hub;
+  const body=document.getElementById('resp-body');
+  body.innerHTML='<div class="coord-empty">Cargando…</div>';
+  const slug=HUB_SLUG[hub];
+  try{
+    const [partFiles, respFiles, repFiles, orderFiles]=await Promise.all([
+      sbList(`partials/${slug}/`).catch(()=>[]), sbList(`respaldos/${slug}/`).catch(()=>[]), sbList(`reports/${slug}/`), sbList(`orders/${slug}/`)]);
+    const json=f=>f.name&&f.name.endsWith('.json');
+    const reports=repFiles.filter(f=>f.name&&f.name.endsWith('.csv'));
+    const lo=latestOrderFile(orderFiles), currentOd=lo?(lo.r2?`${lo.date}-r2`:lo.date):null;
+    const hasReport=od=>reports.some(f=>f.name.startsWith(bareOrderDate(od)) && /_r2_/.test(f.name)===/-r2$/.test(od));
+    // saved progress right now — newest version per order
+    const parts=partFiles.filter(json);
+    const ods=[...new Set(parts.map(f=>f.name.includes('__')?f.name.split('__')[0]:f.name.replace(/\.json$/,'')))];
+    const current=(await Promise.all(ods.map(async od=>{
+      try{ const p=(await fetchRemotePartial(hub, od, parts)).partial; return p?{type:'partial', od, ts:Date.parse(p.savedAt)||0, motivo:'en_progreso', payload:p}:null; }catch(_){ return null; }
+    }))).filter(Boolean).sort((a,b)=>b.ts-a.ts);
+    // respaldos, newest first; bodies loaded a page at a time
+    const resp=respFiles.filter(json).map(f=>{ const [od,ep,mot]=f.name.replace(/\.json$/,'').split('__'); return {type:'respaldo', name:f.name, od, ts:Number(ep)||0, motivo:mot}; })
+      .sort((a,b)=>b.ts-a.ts);
+    // lost progress (scans, no saved progress, no report) — needs the picks_por_pedido view
+    let lost=[], viewMissing=false;
+    try{
+      const since=localDateStr(new Date(serverNow().getTime()-14*86400000));
+      const rows=await pgSelect('picks_por_pedido', `hub=eq.${encodeURIComponent(hub)}&order_date=gte.${since}&order=order_date.desc&select=order_date,ronda,picks,skus,armadores,ultimo`);
+      for(const v of rows){
+        const od=v.ronda===2?`${v.order_date}-r2`:v.order_date;
+        if(ods.includes(od)) continue;
+        if((await reportsForOrder(hub, od, reports)).length) continue;
+        lost.push({type:'perdido', od, ts:Date.parse(v.ultimo)||0, view:v});
+      }
+    }catch(_){ viewMissing=true; }
+    let events=[];
+    try{ events=await pgSelect('partial_events', `hub=eq.${encodeURIComponent(hub)}&order=ts.desc&limit=20&select=order_date,ronda,action,reason,armador,done,total,ts`); }catch(_){}
+    _resp={hub, slug, currentOd, current, resp, lost, events, viewMissing, shown:0, hasReport, orderNames:new Set(orderFiles.map(f=>f.name)), reportNames:new Set(reports.map(f=>f.name))};
+    await respLoadMore();
+  }catch(e){ body.innerHTML=`<div class="coord-empty">⚠ No se pudo cargar (${escH(String(e&&e.message||e))}). <button class="btn-retry" onclick="openRespaldos('${escH(hub)}')">Reintentar</button></div>`; }
+}
+async function respLoadMore(){
+  const r=_resp; if(!r) return;
+  const next=r.resp.slice(r.shown, r.shown+RESP_PAGE);
+  await Promise.all(next.map(async x=>{ try{ x.body=JSON.parse(await sbFetch(`respaldos/${r.slug}/${x.name}`)); }catch(_){ x.body=null; } }));
+  r.shown+=next.length;
+  renderRespaldos();
+}
+function respItem(i){ const r=_resp; return i<r.current.length ? r.current[i] : i<r.current.length+r.lost.length ? r.lost[i-r.current.length] : r.resp[i-r.current.length-r.lost.length]; }
+function renderRespaldos(){
+  const r=_resp, body=document.getElementById('resp-body');
+  const dd=od=>`Pedido ${ddmm(bareOrderDate(od))}${/-r2$/.test(od)?' (complemento)':''}`;
+  const btn=(label,fn,cls)=>`<button class="${cls||'coord-nosurt-btn'}" onclick="${fn}">${label}</button>`;
+  const rowHtml=(x,i)=>{
+    const isCurrent=x.od===r.currentOd, rep=r.hasReport(x.od);
+    let title=RESP_LABEL[x.motivo]||x.motivo||'', sub='', acts=[];
+    if(x.type==='perdido'){
+      title='🔴 Avance perdido — se puede reconstruir de los escaneos';
+      sub=`${x.view.skus} productos escaneados${(x.view.armadores||[]).length?` · ${x.view.armadores.join(', ')}`:''} · último ${whenLabel(x.ts)}`;
+      acts.push(btn('Reconstruir…',`respRebuild(${i})`,'coord-upload-btn'));
+    } else {
+      const b=x.type==='partial'?x.payload:x.body, pl=x.type==='partial'?x.payload:(b&&b.payload);
+      const kind=x.type==='partial'?'partial':(b&&b.kind);
+      if(kind==='partial' && pl && pl.results){ const pi=partialInfo(pl); sub=`${pi.done}/${pi.total}${pi.armadores.length?` · ${pi.armadores.join(', ')}`:''}`; }
+      else if(b&&b.done!=null) sub=`${b.done}/${b.total}`;
+      sub=[sub, whenLabel(x.ts)].filter(Boolean).join(' · ');
+      if(x.type==='respaldo' && !b) sub+=' · no se pudo leer';
+      if(kind==='partial' && pl){
+        acts.push(btn('Ver',`respView(${i})`));
+        if(!rep){
+          if(isCurrent && x.type==='respaldo') acts.push(btn('Restaurar…',`respRestorePartial(${i})`,'coord-upload-btn'));
+          acts.push(btn('Cerrar como terminado',`respClose(${i})`,'coord-del-btn'));
+        }
+      }
+      if(kind==='order' && b && !r.orderNames.has(`${b.orderDate}.csv`)) acts.push(btn('Restaurar pedido…',`respRestoreFile(${i})`,'coord-upload-btn'));
+      if(kind==='report' && b && b.payload && !r.reportNames.has(String(b.path||'').split('/').pop())){ acts.push(btn('Ver',`respView(${i})`)); acts.push(btn('Restaurar reporte…',`respRestoreFile(${i})`,'coord-upload-btn')); }
+      if(b||pl) acts.push(btn('⬇',`respDownload(${i})`));
+      if(kind==='partial' && !rep && !isCurrent && x.type==='respaldo') sub+=' · no es el pedido cargado ahora';
+    }
+    return `<div class="resp-row"><div class="resp-main"><div class="resp-title">${escH(dd(x.od))} · ${escH(title)}</div><div class="resp-sub">${escH(sub)}</div></div><div class="resp-actions">${acts.join('')}</div></div>`;
+  };
+  const nCur=r.current.length, nLost=r.lost.length;
+  const sect=(t)=>`<div class="reg-sect">${t}</div>`;
+  const shown=r.resp.slice(0, r.shown);
+  body.innerHTML=
+    sect('Avance guardado ahora')+(nCur?r.current.map((x,k)=>rowHtml(x,k)).join(''):'<div class="coord-empty">Ningún pedido con avance guardado.</div>')+
+    (nLost?sect('🔴 Avance perdido')+r.lost.map((x,k)=>rowHtml(x,nCur+k)).join(''):'')+
+    (r.viewMissing?'<div class="coord-page-note">Para ver avances perdidos de días anteriores falta crear la vista <code>picks_por_pedido</code> en Supabase.</div>':'')+
+    sect(`Respaldos (${RESPALDO_DAYS} días)`)+(shown.length?shown.map((x,k)=>rowHtml(x,nCur+nLost+k)).join(''):'<div class="coord-empty">Sin respaldos todavía.</div>')+
+    (r.shown<r.resp.length?`<button class="archive-toggle" onclick="respLoadMore()">Ver más (${r.resp.length-r.shown})</button>`:'')+
+    `<details class="rep-day" style="margin-top:16px"><summary><span class="rep-day-title">📜 Eventos</span><span class="rep-day-count">${r.events.length}</span></summary>${
+      r.events.length?r.events.map(ev=>`<div class="invrow"><b>${{saved:'💾',cleared:'🗑',restored:'🛟',override:'⛔'}[ev.action]||''} ${escH(ev.order_date||'')}${ev.ronda===2?' (R2)':''}${ev.done!=null&&ev.total!=null?` · ${ev.done}/${ev.total}`:''}</b><span>${escH(RESP_EVENT_LABEL[ev.reason]||ev.reason||ev.action)}${ev.armador?' · '+escH(ev.armador):''} · ${escH(whenLabel(Date.parse(ev.ts)))}</span></div>`).join(''):'<div class="coord-empty">Sin eventos.</div>'}</details>`;
+}
+function respPartialOf(x){ return x.type==='partial'?x.payload:(x.body&&x.body.kind==='partial'?x.body.payload:null); }
+// Read-only look at a partial or a deleted report, in the same summary screen assemblers use
+function respView(i){
+  const x=respItem(i), r=_resp; if(!x) return;
+  const pl=respPartialOf(x);
+  let rows, meta;
+  if(pl){ rows=pl.items.map((it,k)=>liveSummaryRow(it, restoreDates(pl.results)[k])); meta=`${r.hub} · Pedido ${ddmm(bareOrderDate(x.od))} · ${RESP_LABEL[x.motivo]||''}`; }
+  else if(x.body&&x.body.kind==='report'){ const csv=x.body.payload.csv; rows=Papa.parse(csv.split(/\r?\n/).filter(l=>!l.startsWith('#')).join('\r\n'),{header:true,dynamicTyping:false,skipEmptyLines:true}).data.filter(q=>q['Producto']).map(reportRowToSummary); meta=`${r.hub} · Pedido ${ddmm(bareOrderDate(x.od))} · reporte borrado`; }
+  else return;
+  _sumReturn='respaldos';
+  showScreen('summary');
+  document.getElementById('btn-seguir').style.display='none';
+  document.getElementById('btn-terminar').style.display='none';
+  document.getElementById('btn-sum-back').style.display='';
+  renderSummaryBody(rows, meta, 'readonly');
+}
+// A copy becomes the current saved progress again (only for the order loaded now and with no report) — any
+// assembler can then continue it from the hub. Written as a new version, so what was there stays among the copies.
+function respRestorePartial(i){
+  const x=respItem(i), r=_resp, pl=respPartialOf(x); if(!pl) return;
+  const now=r.current.find(c=>c.od===x.od), pi=partialInfo(pl);
+  const nowTxt=now?`Ahora hay ${partialInfo(now.payload).done}/${partialInfo(now.payload).total} guardado — se reemplaza por ${pi.done}/${pi.total}. Lo que hay ahora queda en las copias.`:`Este pedido no tiene avance guardado ahora. Quedará con ${pi.done}/${pi.total}.`;
+  showModal('Restaurar avance', `${r.hub} · Pedido ${ddmm(bareOrderDate(x.od))}\n\n${nowTxt}\n\nCualquier armador podrá continuarlo desde el hub.`, 'Restaurar', 'm-ok', async()=>{
+    const p={...pl, savedAt:serverNow().toISOString(), deviceId:getDeviceId()};
+    try{
+      await savePartialToSupabase(p, ++_partialSaveSeq);
+      recordPartialEvent(r.hub, x.od, p.ronda, 'restored', 'respaldo', pi.done, pi.total);
+      toast(`✓ Avance restaurado — ${pi.done}/${pi.total}`, 3000); openRespaldos(r.hub);
+    }catch(e){ toast('❌ No se pudo restaurar: '+e.message, 4000); }
+  });
+}
+// Put a deleted order CSV or report (+ its metrics) back where it was
+function respRestoreFile(i){
+  const x=respItem(i), r=_resp, b=x&&x.body; if(!b) return;
+  const isOrder=b.kind==='order', path=b.path;
+  const newer=isOrder && r.currentOd && bareOrderDate(r.currentOd)>bareOrderDate(b.orderDate);
+  const msg=isOrder ? `Se vuelve a cargar el pedido del ${ddmm(bareOrderDate(b.orderDate))} de ${r.hub}.${newer?`\n\nOjo: hay un pedido más nuevo cargado (${ddmm(bareOrderDate(r.currentOd))}); los armadores seguirán viendo ese.`:''}`
+    : `Se vuelve a poner el reporte del pedido ${ddmm(bareOrderDate(b.orderDate))} de ${r.hub}.`;
+  showModal(isOrder?'Restaurar pedido':'Restaurar reporte', msg, 'Restaurar', 'm-ok', async()=>{
+    try{
+      if(isOrder) await sbUpload(path, b.payload, 'text/csv');
+      else{ await sbUpload(path, b.payload.csv, 'text/csv'); if(b.payload.metrics) await sbUpload(metricsPathForReport(path), JSON.stringify(b.payload.metrics), 'application/json'); }
+      toast('✓ Restaurado', 2500); openRespaldos(r.hub);
+    }catch(e){ toast('❌ No se pudo restaurar: '+e.message, 4000); }
+  });
+}
+function respClose(i){ const x=respItem(i), pl=respPartialOf(x); if(pl) confirmCloseOrder(_resp.hub, {...pl, orderDate:pl.orderDate||x.od}, ()=>openRespaldos(_resp.hub)); }
+async function respRebuild(i){
+  const x=respItem(i), r=_resp; if(!x) return;
+  let p=null;
+  try{ p=await rebuildPartialFromPicks(r.hub, x.od, x.view.ronda||1); }catch(e){ toast('❌ '+(e.message||e), 4000); return; }
+  if(!p){ toast('No hay escaneos que reconstruir'); return; }
+  const pi=partialInfo(p);
+  if(x.od===r.currentOd){
+    showInfoModal('Reconstruir avance', `${r.hub} · Pedido ${ddmm(bareOrderDate(x.od))}\n\nSe reconstruyeron ${pi.done} de ${pi.total} productos desde los escaneos. Los tiempos no serán exactos; las cantidades sí.\n\n¿Qué quieres hacer?`,
+      { okLabel:'Guardar como avance', onOk:async()=>{ try{ await persistRebuiltPartial(p); toast(`✓ Avance reconstruido — ${pi.done}/${pi.total}`,3000); openRespaldos(r.hub); }catch(e){ toast('❌ '+e.message,4000); } },
+        extra:{ label:'Cerrar como terminado', fn:()=>confirmCloseOrder(r.hub, p, ()=>openRespaldos(r.hub)) } });
+  } else confirmCloseOrder(r.hub, p, ()=>openRespaldos(r.hub)); // not the order loaded now — it can only be closed
+}
+function respDownload(i){
+  const x=respItem(i), r=_resp; if(!x) return;
+  const b=x.type==='partial'?{kind:'partial', payload:x.payload}:x.body; if(!b) return;
+  const base=`respaldo_${r.hub.replace(/\s+/g,'_')}_${bareOrderDate(x.od)}_${x.motivo||b.kind}`;
+  if(b.kind==='order') return triggerDownload(b.payload, base+'.csv');
+  if(b.kind==='report') return triggerDownload(b.payload.csv, base+'.csv');
+  const blob=new Blob([JSON.stringify(b.payload||b,null,1)],{type:'application/json'});
+  const url=URL.createObjectURL(blob); Object.assign(document.createElement('a'),{href:url,download:base+'.json'}).click(); URL.revokeObjectURL(url);
+}
+function closeRespaldos(){ _resp=null; showScreen('coordinator'); loadCoordinatorScreen(); }
+
 /* ── REGISTRATION COPILOT (§3.7) — the typing stays manual; this makes it faster and harder to lose your place ── */
 let _regState=null;
 
@@ -4587,6 +4856,7 @@ function showScreen(name){ clearToast(); document.querySelectorAll('.screen').fo
 // v2.2/F9c — optional 6th arg {label, onExtra} adds a third, non-destructive button (e.g. "Subir sin
 // borrar el progreso"). Omitted by every other call site, so existing 5-arg calls are unaffected.
 function showModal(title,body,okLabel,okClass,onOk,extra){
+  resetTypedConfirm();
   const cancel=document.getElementById('m-cancel');
   cancel.style.display=''; cancel.textContent='Cancelar'; cancel.onclick=closeModal;
   document.getElementById('m-title').textContent=title; document.getElementById('m-body').textContent=body;
@@ -4598,6 +4868,29 @@ function showModal(title,body,okLabel,okClass,onOk,extra){
   document.getElementById('modal-bg').classList.add('open');
 }
 function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); }
+/* v2.3/E — risky actions ask the person to TYPE a word (BORRAR, CERRAR, SUBIR). The instruction is spelled out —
+   assemblers aren't tech-savvy — and the button stays grey until the word matches (any case, accents and spaces ignored). */
+function resetTypedConfirm(){
+  document.getElementById('m-typed-wrap').style.display='none';
+  const ok=document.getElementById('m-ok'); ok.disabled=false; ok.style.opacity='';
+}
+function typedWord(v){ return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toUpperCase(); }
+// opts: {title, body, word, okLabel, onOk, extra:{label, fn}}
+function showTypedConfirm(o){
+  document.getElementById('m-title').textContent=o.title;
+  document.getElementById('m-body').textContent=`${o.body}\n\nPara confirmar, escribe la palabra ${o.word} en el cuadro de abajo y toca "${o.okLabel}".`;
+  const wrap=document.getElementById('m-typed-wrap'), inp=document.getElementById('m-typed'), ok=document.getElementById('m-ok');
+  wrap.style.display=''; inp.value=''; inp.placeholder=`Escribe ${o.word}`;
+  ok.textContent=o.okLabel; ok.className='m-danger'; ok.disabled=true; ok.style.opacity='.4';
+  inp.oninput=()=>{ const good=typedWord(inp.value)===o.word; ok.disabled=!good; ok.style.opacity=good?'':'.4'; };
+  ok.onclick=()=>{ if(ok.disabled) return; closeModal(); resetTypedConfirm(); o.onOk(); };
+  const cancel=document.getElementById('m-cancel'); cancel.style.display=''; cancel.textContent='Cancelar'; cancel.onclick=()=>{ closeModal(); resetTypedConfirm(); };
+  const ex=document.getElementById('m-extra');
+  if(o.extra){ ex.style.display=''; ex.textContent=o.extra.label; ex.onclick=()=>{ closeModal(); resetTypedConfirm(); o.extra.fn(); }; }
+  else{ ex.style.display='none'; ex.onclick=null; }
+  document.getElementById('modal-bg').classList.add('open');
+  setTimeout(()=>inp.focus(), 80);
+}
 document.getElementById('modal-bg').addEventListener('click',e=>{ if(e.target===document.getElementById('modal-bg')) closeModal(); });
 
 /* ── TOAST ── */
@@ -4796,7 +5089,7 @@ async function loadPartialProgress(hub, orderDate){
      respaldos/{hub-slug}/{orderDate}__{epochMs}__{motivo}.json
    and only deletes once that copy landed. No copy → no delete (a delete is never urgent; offline it waits). */
 const RESPALDO_DAYS=30;
-const RESPALDO_MOTIVO={ report_uploaded:'terminado', outbox_report:'terminado', leftover_after_report:'terminado',
+const RESPALDO_MOTIVO={ report_uploaded:'terminado', outbox_report:'terminado', leftover_after_report:'terminado', cerrado_coordinador:'cerrado_por_coordinador',
   discard_button:'empezar_de_cero', coordinator_upload:'subida_coordinador' };
 async function writeRespaldo(hub, r){
   const t=serverNow();
@@ -4907,9 +5200,12 @@ async function rebuildPartialFromPicks(hub, orderDate, ronda){
   // suffix for round 2 — normalize once here so every caller (bare date, or already-suffixed) matches.
   const od=orderDate.endsWith('-r2')?orderDate:(ronda===2?orderDate+'-r2':orderDate);
   // 1. Same filter rules fetchOrderForHub uses, so the rebuilt list matches what the assembler saw.
-  const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${od}.csv`);
-  const parsed=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
-  const requested=parsed.data.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
+  // v2.3/A5 — order CSVs are deleted daily; pedido_completo keeps every row of an R1 order
+  let src=null;
+  try{ src=Papa.parse(await sbFetch(`orders/${HUB_SLUG[hub]}/${od}.csv`),{header:true,dynamicTyping:false,skipEmptyLines:true}).data; }
+  catch(_){ if(ronda!==2){ try{ src=JSON.parse(await sbFetch(`pedido_completo/${HUB_SLUG[hub]}/${bareOrderDate(od)}.json`)).rows||null; }catch(_){} } }
+  if(!src) throw new Error('no encontré el pedido para reconstruir');
+  const requested=src.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
   const activos=requested.filter(r=>(parseFloat(r['Inventario hub saliente'])||0)>0);
   const rows=(ronda===2||!activos.length)?requested:activos;
   if(!rows.length) return null;

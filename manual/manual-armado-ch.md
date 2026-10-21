@@ -312,6 +312,7 @@ La app recuerda la última sección que usaste.
 | ✅ **Armados** | Reportes terminados: *Hoy* y *Historial* |
 | ☑️ **Verificar captura** | Comparar lo capturado en Retool contra lo armado (ver abajo) |
 | 📭 **Faltantes** | Conflictos de inventario, faltantes de hoy y el CSV del día |
+| 📊 **Métricas** | La tabla de métricas de armado (ver sección 8) |
 | 🔄 **Cierre** | Inventario de cierre y complementos |
 | 👤 **Armadores** | La lista de nombres |
 | 🖼 **Imágenes** | Base de imágenes |
@@ -329,6 +330,24 @@ Una tarjeta por hub. Cada una muestra el pedido cargado y en qué va:
 | 🟡 **En progreso 112/301** | Alguien lo está armando; dice quién y hace cuánto se guardó |
 | ✅ **Armado 152/152** | Terminado y con reporte (o *con pendientes* si quedaron productos sin armar) |
 | 🔴 **Se perdió el avance** | Hubo escaneos pero no hay avance guardado — usa 🛟 **Recuperar** |
+| 🔒 **Cerrado por coordinador** | El coordinador lo cerró sin terminar de armar |
+
+**Subir un pedido nuevo encima de uno sin terminar.** Si el pedido cargado de un hub no está ✅ y subes el de un día
+nuevo, sale un aviso rojo: *⛔ MH Condesa todavía no termina el pedido del 03/09*, con cuánto se armó y quién. Al subir
+el nuevo, los armadores dejan de ver el anterior. Puedes **Cancelar**, **Ver respaldos**, o escribir **SUBIR** para
+subirlo de todos modos.
+
+**Cerrar como terminado.** Cuando un pedido tiene que salir como está (por tiempo solo se armó la mitad, o el armador
+se fue), en la tarjeta del hub toca **Cerrar como terminado** y escribe **CERRAR**. Se genera el reporte con lo armado;
+lo que no se armó queda como *Pendiente* y no se captura en Retool.
+
+**🗂 Respaldos.** Cada hub tiene su botón. Ahí está todo lo que se guardó por 30 días:
+
+- **Avance guardado ahora** de cada pedido.
+- **Avance perdido** que se puede **reconstruir** con los escaneos.
+- **Respaldos**: avances de pedidos terminados, avances que un armador borró con *Empezar de cero*, pedidos y reportes
+  borrados. **Ver** abre el resumen; **Restaurar** lo vuelve a poner; **⬇** lo descarga.
+- **Eventos**: quién guardó, borró o restauró, y cuándo.
 
 1. Toca el hub, elige el archivo CSV.
 2. La app revisa el archivo y sube.
@@ -511,7 +530,7 @@ en la segunda ronda.
 
 ## 8. Métricas
 
-El `📊` del coordinador abre la tabla de métricas. Un renglón por armado.
+En el menú del coordinador, **📊 Métricas** abre la tabla. Un renglón por armado. El `↺` de arriba la actualiza.
 
 `⚑ · Fecha · Hub · Armador · SKUs · Min reloj · Min activos · SKUs/hr · Faltantes · Fecha corta · % completo · % parcial · % sobrante · % faltante · % surtido · Seg/SKU`
 

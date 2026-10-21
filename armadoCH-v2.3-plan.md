@@ -70,7 +70,7 @@ and one page at a time.
 | **Armadores** | Name list | unchanged |
 | **Base de imágenes** | Masterview upload | unchanged |
 
-- 📊 Métricas stays a header button (it's its own screen already).
+- 📊 Métricas — **moved into the menu** (Jose, 2026-10-21); the header keeps only ← and ↺.
 - The last page used is remembered on the device. Each page loads its data when opened (today everything
   loads at once, which is part of why the screen is slow).
 - Pages are `<section>`s inside `screen-coordinator`; `showCoordPage(name)`. No new screens, so the existing
@@ -436,7 +436,7 @@ With misclicks, rows read like:
 | 1 ✅ built 2026-10-20 (uncommitted) | **C1** respaldos before every delete (+ sweep resumed leftovers) · **D1** filenames · **D2** r2 helper · **D3** · **D4** `sbReplace` · **D4b** paging | Makes everything undoable, makes "is this finished?" answerable, stops the 1000-row truncation before daily picks pass it |
 | 2 ✅ built 2026-10-20 (uncommitted) | **A** coordinator pages | Frame for everything below; pure UI, low risk. Also: hub cards wrap to two lines on a phone (the name was squeezed to "M C"); the partial-events log stays on Faltantes until Respaldos exists (Phase 4) |
 | 3 ✅ built 2026-10-20 (uncommitted) | **B** status + morning banner + historial · resume guard for finished orders · **perf**: request queue (max 8, 429 retry), two-stage load, maintenance once a day — the first build fired ~47 requests per open and Supabase rate-limited them (pages empty) | Didn't need the C4 view: status uses the bucket lists, metrics sidecars (cached) and a `limit=1` picks check; the view waits for Respaldos (Phase 4). Pre-v2.3 multi-day reports are matched through their sidecar's `orderDate` |
-| 4 | **C2/C3/C5** Respaldos panel + upload stop for unfinished orders + Cerrar como terminado | |
+| 4 ✅ built 2026-10-21 (uncommitted) | **C2/C3/C5** Respaldos panel + upload stop for unfinished orders + Cerrar como terminado | Restaurar for a partial only on the order loaded now and with no report; the lost-progress list needs the `picks_por_pedido` view (C4) — degrades to a note without it |
 | 5 | **E** careful deletes | |
 | 6 ✅ built 2026-10-20 (uncommitted) | **F** verificar captura | Built ahead of 4–5. Additions over the spec: rows sorted worst-first; a ⛔ file hides its rows; status chip + banner count on Pedidos. **Changed by Jose:** no 🟡 "faltante sin marcar" — only real mistakes; **per-hub cards like Cargar pedidos**, the order cross-check is a wrong-file guard (mismatch → warning + re-upload, never saved) |
 | 7 | **D5/D6** retry chip + local cleanup | |

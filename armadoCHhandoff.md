@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-f')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p4')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -282,7 +282,7 @@ Reached from **Finalizar pedido** (`showSummary`, mode `'live'`) or from 📋 Pe
 
 ### 7.5 Coordinator (PIN from `coordinator_pin.txt`, cached for the session)
 **Pages under a sticky top menu (v2.3 Phase 2)** — one `<section class="coord-page">` visible at a time inside
-`screen-coordinator`. Header: `←` · 📊 metrics · ↺ reload, then the menu (scrolls sideways on a phone).
+`screen-coordinator`. Header: `←` · ↺ reload (only), then the menu (scrolls sideways on a phone).
 
 - `showCoordPage(name)` shows one page, saves it to `calii_coord_page`, and loads that page's data.
 - `loadCoordinatorScreen()` = drop cached data + flush the outbox + reload the **current** page. Called by ↺, PIN
@@ -300,17 +300,18 @@ Reached from **Finalizar pedido** (`showSummary`, mode `'live'`) or from 📋 Pe
 
 | Menu | Page id | Content | Loader |
 |---|---|---|---|
-| 📦 Pedidos | `pedidos` | **Morning banner** (v2.3/B2): the newest order date before today from `pedido_completo/` (order CSVs are deleted daily), `N de M armados · K sin terminar`, a chip per unfinished hub that scrolls to its card. **Hub cards** (v2.3/B1): name + status chip (`⚪ Pendiente` · `🟡 En progreso N/M` · `🟡 Continuado después del reporte` · `✅ Armado N/M` / `con pendientes` · `🔴 Se perdió el avance`), `✓ Pedido dd/mm` badge (amber if not today, `· 🔄 R2`) + `N activos · M reserva`, who/when line, then `Subir CSV`, `📄 No surtido`, `🛟 Recuperar` (status = perdido), `🗑` / `🗑 R1`·`🗑 R2` | `renderMorningBanner`, `renderPedidosPage` |
+| 📦 Pedidos | `pedidos` | **Morning banner** (v2.3/B2): the newest order date before today from `pedido_completo/` (order CSVs are deleted daily), `N de M armados · K sin terminar`, a chip per unfinished hub that scrolls to its card. **Hub cards** (v2.3/B1): name + status chip (`⚪ Pendiente` · `🟡 En progreso N/M` · `🟡 Continuado después del reporte` · `✅ Armado N/M` / `con pendientes` · `🔴 Se perdió el avance`), `✓ Pedido dd/mm` badge (amber if not today, `· 🔄 R2`) + `N activos · M reserva`, who/when line, then `Subir CSV`, `📄 No surtido`, `🛟 Recuperar` (status = perdido), `Cerrar como terminado` (status 🟡/🔴, §8.2c), `🗂 Respaldos` (§8.2c), `🗑` / `🗑 R1`·`🗑 R2`. **Upload stop** (v2.3/C3): `Subir CSV` for a new day over a current order that isn't ✅ → red typed-`SUBIR` dialog (`unfinishedOrderBlock`), nothing written until confirmed; override logged as `coordinator_override` | `renderMorningBanner`, `renderPedidosPage`, `uploadHubCSV` → `processHubUpload` |
 | ✅ Armados | `armados` | `Hoy` = reports for the currently loaded orders (filename date ≥ the hub's order date) · `Historial` = everything older, dimmed, with hub + 7/30/90/todo filters (default 30). Both are **grouped by order date** (`renderReportGroups`): one collapsible block per day headed `Lunes 19 oct 2026 · ayer` with `N armados · M complementos`; inside, by hub, R2 indented under R1. Newest 3 days open in Historial. Each row: time — armador (+ `· terminado dd/mm` when finished on a later day), `📋` registro, `⬇ CSV`, `🗑`. Legacy one-date reports group under their finish date | `renderArmadosPage`, `renderArchive`, `setArchFilter`, `setArmadosView` |
 | ☑️ Verificar captura | `verificar` | **Same layout as Pedidos:** one card per hub = its newest order with a round-1 report, status chip (`⚪ Sin verificar` / `☑️ Capturado` / `⚠️ Captura con errores (N)`), its own `Subir exportación` and `Ver detalle`; a line per older recent order that has a verification (§9.12) | `vcInit`, `vcRenderHubs`, `vcUploadHub`, `vcShowHub` |
 | 📭 Faltantes | `faltantes` | `📭 Faltantes del día (CSV)` + ⚠️ conflicts (`Inv > 0` and demand across hubs > Inv), 📭 today's faltantes (desmentido markers), 📜 last 20 `partial_events` | `loadInvToday` |
+| 📊 Métricas | `metricas` | the metrics table (§7.6, §9.8) — moved from its own screen into the menu (2026-10-21). `.coord-body.wide` (900 px) on this page only. ↺ here = `loadMetrics(false)` (lists every sidecar, fetches only new ones) | `loadMetrics`, `renderMetrics` |
 | 🔄 Cierre | `cierre` | closing-inventory upload, `Revisar` → candidates → `Generar complemento` / `Generar todos` (§9.7) | `refreshCierreStatus` |
 | 👤 Armadores | `armadores` | add / remove names | `loadAssemblers` + `renderAssemblerList` |
 | 🖼 Imágenes | `imagenes` | Masterview upload (§9.10) | `refreshImgDbStatus` |
 
 ### 7.6 Metrics, Registro, Manual
-- **📊 Métricas** — one row per sidecar; filters (armador, hub, 7/30/90/todo, solo irregulares), sortable
-  headers, weighted SKUs/hr footer, `⬇ CSV` of the current view, per-row 🗑 (§9.8).
+- **📊 Métricas** (coordinator page, not a screen since 2026-10-21) — one row per sidecar; filters (armador, hub,
+  7/30/90/todo, solo irregulares), sortable headers, weighted SKUs/hr footer, `⬇ CSV` of the current view, per-row 🗑 (§9.8).
 - **📋 Registro** — registration copilot (§9.9).
 - **📖 Manual** — renders `manual/manual-armado-ch.md` at runtime with a tiny Markdown converter
   (`_mdToHtml`), one collapsible per `## ` section; `⬇ PDF` = `window.print()` with a print stylesheet.
@@ -373,6 +374,7 @@ Exactly these callers:
 | `Empezar de cero` → danger modal → confirm | `discard_button` | `empezar_de_cero` | toast, card stays, nothing deleted |
 | Coordinator same-day re-upload → `Subir y borrar progreso` | `coordinator_upload` | `subida_coordinador` | toast, upload aborted |
 | Coordinator screen sweep (`sweepLeftoverPartials`) | `leftover_after_report` | `terminado` | stays |
+| Coordinator `Cerrar como terminado` (report uploaded first) | `cerrado_coordinador` | `cerrado_por_coordinador` | partial stays |
 
 Nothing else deletes a partial. `newOrder()` no longer clears anything (v2.3 removed its silent re-clear, which
 could delete without a respaldo); `←`, `saveAndExit`, `startAssembly` keep it.
@@ -417,6 +419,34 @@ older than `RESPALDO_DAYS` (30) once per hub per session.
 **Status is only about the hub's current order** (Jose, 2026-10-20). Older orders are not looked up or shown on
 the cards; the morning banner covers yesterday. (An earlier build listed older unfinished partials in red —
 Contry 14/09-r2 at 1/7, Cumbres 01/10 at 1/56 — and was removed as noise.)
+
+### 8.2c Respaldos screen and Cerrar como terminado (v2.3 Phase 4)
+**🗂 Respaldos** (`screen-respaldos`, `openRespaldos(hub)`) — everything kept for one hub:
+- *Avance guardado ahora* — newest version of every partial in `partials/{slug}/`.
+- *🔴 Avance perdido* — order dates in the `picks_por_pedido` view (last 14 days) with scans but no partial and no
+  report → **Reconstruir…** (`rebuildPartialFromPicks`; for the current order: save as progress or close; for an older
+  one: close only). Without the view the section is replaced by a note.
+- *Respaldos (30 días)* — `respaldos/{slug}/`, newest first, bodies loaded 15 at a time (`respLoadMore`).
+- *📜 Eventos* — last 20 `partial_events` for the hub.
+
+Actions: **Ver** (partial or deleted report in the read-only summary; `← Volver` returns here via `_sumReturn`) ·
+**Restaurar…** a partial copy — only for the order loaded now and only when it has no report (a restored copy with
+no later work would just be swept as finished); written as a new version, so the current one stays among the copies ·
+**Restaurar pedido / reporte…** — puts a deleted order CSV or report (+ metrics) back when its path is free; warns
+when a newer order is loaded · **Cerrar como terminado** · **⬇** (CSV for orders/reports, JSON otherwise).
+
+**Cerrar como terminado** (`confirmCloseOrder` → `closeOrderAsFinished`) — typed `CERRAR`. Builds the report from the
+partial exactly like `finalizeAssembly` (same columns and path rules; pending rows = `Pendiente`; armador fallback
+"Coordinador"), uploads via the outbox path, clears the partial archive-first (`cerrado_coordinador`), writes the
+sidecar with `INCOMPLETO` + `CERRADO_COORDINADOR` 🔒 (+ `RECUPERADO` when rebuilt). Status then shows
+`🔒 Cerrado por coordinador N/M`. Offered from the hub card (status 🟡 or 🔴 — a lost one is rebuilt first) and from
+Respaldos.
+
+`rebuildPartialFromPicks` falls back to `pedido_completo` when the order CSV is gone (R1 only) — H§12 item 2.
+
+**Typed confirmations** (`showTypedConfirm`): the instruction is spelled out ("escribe la palabra CERRAR en el cuadro
+de abajo y toca 'Cerrar'"), the button stays grey until the word matches (`typedWord`: any case, accents and spaces
+ignored). Used by SUBIR (upload stop) and CERRAR; Phase 5 adds BORRAR.
 
 ### 8.3 Recovery from picks (🛟)
 `rebuildPartialFromPicks(hub, orderDate, ronda)`:
@@ -634,10 +664,9 @@ Settled — don't relitigate without new data:
 Found while reading the code on 2026-10-20. None fixed yet.
 
 **Safety / recovery gaps**
-1. **Older partials become invisible** when a newer order date is uploaded (§8.2). No screen lists all
-   partials for a hub or across hubs.
-2. **🛟 recovery needs the order CSV.** Delete the order and recovery fails, even though
-   `pedido_completo/{slug}/{date}.json` still has every row.
+1. Older partials become invisible to assemblers when a newer order date is uploaded (§8.2). **Mitigated (v2.3):**
+   the upload stop warns before it happens, and 🗂 Respaldos lists every partial of a hub (view, close, restore).
+2. ~~🛟 recovery needs the order CSV~~ — **fixed (v2.3 Phase 4):** falls back to `pedido_completo` (R1).
 3. **The 🛟 card doesn't block Iniciar Armado**, so a fresh start buries recoverable work.
 4. **Order 🗑 is a single confirmation that checks nothing**, and silently promotes the previous date.
 5. Remote partial writes have no retry/outbox (covered by the next save + local + picks).
