@@ -101,8 +101,9 @@ Significa que **ya hay un armado a medias** para ese hub — tuyo o de un compa�
 
 - **↩ Continuar pedido** — retoma donde se quedó, con todo lo ya armado. Puedes continuar el pedido de otra
   persona sin problema; la app guarda quién armó cada renglón.
-- **Empezar de cero** — descarta lo anterior y empieza de cero. Antes te pide confirmar y te dice cuántos
-  productos se pierden. El avance se guarda en un respaldo que el coordinador puede recuperar durante 30 días.
+- **Empezar de cero** — descarta lo anterior y empieza de cero. Te dice cuántos productos se pierden y te pide
+  **escribir la palabra BORRAR** en un cuadro para confirmar. El avance se guarda en un respaldo que el coordinador
+  puede recuperar durante 30 días.
 
 Mientras el aviso esté ahí, *Iniciar Armado* está bloqueado. Es a propósito: para que nadie borre por accidente
 el trabajo de alguien más.
@@ -352,7 +353,9 @@ lo que no se armó queda como *Pendiente* y no se captura en Retool.
 1. Toca el hub, elige el archivo CSV.
 2. La app revisa el archivo y sube.
 3. La etiqueta cambia a `✓ 2026-09-02 (112 prod.)`.
-4. El `🗑` borra el pedido de ese hub, con confirmación.
+4. El `🗑` borra el pedido de ese hub. Antes te dice si ya se armó y **qué verán los armadores después**. Si el
+   pedido tiene un armado sin terminar, te pide **escribir BORRAR**. Borrar un reporte siempre pide escribir BORRAR.
+   Todo lo borrado queda 30 días en 🗂 Respaldos.
 
 **Sube el archivo completo, sin filtrar.** La app separa sola:
 
@@ -601,6 +604,10 @@ La app está hecha para el CH, no para una oficina. Nada se pierde por una zona 
   `⚠ Sin conexión — usando el pedido guardado del {fecha}`.
 - La pastilla `⏳ N pendiente(s) de enviar` en el inicio te dice si algo sigue en cola. Tócala para forzar el
   envío.
+
+**☁ Sin sincronizar.** Si tu avance no ha podido llegar a la nube en 2 minutos, arriba de la lista sale *☁ Sin
+sincronizar desde 10:42 — tu avance está en este teléfono*. Sigue armando: se envía solo cuando vuelva el internet.
+Mientras salga, **no borres los datos del navegador ni cambies de teléfono**.
 
 **Regla de oro:** cualquier armado con al menos un producto confirmado deja **siempre** o un reporte o un
 armado a medias recuperable. Nunca las dos cosas en cero.

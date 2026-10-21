@@ -723,6 +723,7 @@
       <span class="list-prog-label" id="list-prog-label" onclick="refreshSemaforo()" style="cursor:pointer" title="Actualizar inventario">0/0</span>
       <button class="finish-hdr-btn" onclick="requestFinish()">Finalizar pedido</button>
     </div>
+    <div id="sync-chip" class="local-backup-chip" style="display:none;background:#FFF8E1;color:#8a5a00"></div>
     <div id="local-backup-chip" class="local-backup-chip" style="display:none">⚠ Sin respaldo local en este dispositivo — el progreso se guarda sólo en la nube</div>
     <div class="list-filter-seg" id="list-filter-seg">
       <button data-f="all" class="active" onclick="setListFilter('all')">Todos</button>
@@ -1022,6 +1023,8 @@ async function sbUploadQueued(path, body, meta={}){
 let _flushing=false;
 async function flushOutbox(manual){
   if(_flushing) return;
+  if(_syncSlot){ _syncAttempt=0; runPartialSync(); } // v2.3/D5 — unsent progress rides along
+  if(!outboxRead().length && _syncSlot){ if(manual) toast('Enviando avance…'); return; }
   let a=outboxRead();
   if(!a.length){ if(manual) toast('Nada pendiente de enviar'); return; }
   _flushing=true;
@@ -1053,7 +1056,7 @@ async function flushOutbox(manual){
 }
 function updateOutboxPill(){
   const el=document.getElementById('home-outbox-pill'); if(!el) return;
-  const n=outboxRead().length;
+  const n=outboxRead().length+(_syncSlot?1:0); // v2.3/D5 — unsent progress counts too (only ever called after boot)
   if(n>0 && !el.classList.contains('ok')){ el.style.display='block'; el.textContent=`⏳ ${n} pendiente${n>1?'s':''} de enviar`; }
   else if(!el.classList.contains('ok')) el.style.display='none';
 }
@@ -2103,41 +2106,53 @@ async function checkPartialThenUpload(hub, text, items, badge, fields){
     const done=partial.results.filter(r=>r.status!=='pending').length, total=partial.results.length;
     const workers=[...new Set(partial.results.filter(r=>r.assembler).map(r=>r.assembler))];
     const workerStr=workers.length?workers.join(', '):'un armador desconocido';
-    showModal(
-      `⚠ Armado en progreso — ${hub}`,
-      `Hay ${done} de ${total} productos armados por ${workerStr} contra el pedido del ${od}.\n\nSi subes este archivo y borras el progreso, hay que armar el pedido completo otra vez.`,
-      'Subir y borrar progreso',
-      'm-danger',
-      async ()=>{
+    showTypedConfirm({ title:`⚠ Armado en progreso — ${hub}`,
+      body:`Hay ${done} de ${total} productos armados por ${workerStr} contra el pedido del ${ddmm(od)}.\n\nSi subes este archivo y borras el progreso, hay que armar el pedido completo otra vez (queda una copia en 🗂 Respaldos).\n\nSi solo corriges el archivo, usa "Subir sin borrar el progreso".`,
+      word:'BORRAR', okLabel:'Subir y borrar progreso',
+      onOk:async ()=>{
         if(!(await clearPartialSave(hub, od, 'coordinator_upload', done, total, {payload:partial}))){ // v2.3/C1
           toast('❌ No se pudo guardar el respaldo del avance — no se subió nada. Intenta de nuevo.', 4000); return;
         }
         await doUpload(hub, text, items, badge, fields);
       },
-      { label:'Subir sin borrar el progreso', onExtra:()=>doUpload(hub, text, items, badge, fields) } // F9c
-    );
+      extra:{ label:'Subir sin borrar el progreso', fn:()=>doUpload(hub, text, items, badge, fields) } }); // F9c
     return;
   }
   await doUpload(hub, text, items, badge, fields);
 }
 
-function clearHubOrder(path, hub, dateLabel){
-  showModal(
-    '¿Eliminar pedido cargado?',
-    `Se eliminará el pedido del ${dateLabel} para ${hub}.\n\nLos armadores ya no podrán acceder a él. Se guarda un respaldo por ${RESPALDO_DAYS} días.`,
-    'Eliminar',
-    'm-danger',
-    async ()=>{
-      // v2.3/C1 — the order CSV goes to respaldos first; no copy → no delete
-      try{
-        const csv=await sbFetch(path);
-        const od=path.split('/').pop().replace(/\.csv$/,'');
-        await writeRespaldo(hub, {kind:'order', orderDate:od, motivo:'pedido_borrado', path, payload:csv});
-      }catch(e){ toast('❌ No se pudo guardar el respaldo — el pedido NO se borró.', 4000); return; }
-      try{ await sbDelete(path); toast(`✓ Pedido de ${hub} eliminado · respaldo por ${RESPALDO_DAYS} días`); loadCoordinatorScreen(); }
-      catch(e){ toast('❌ Error al eliminar: '+e.message); }
-    }
-  );
+// v2.3/E — order 🗑 says what is attached and what the assemblers will see afterwards. Deleting yesterday's FINISHED
+// order is a daily routine → one normal confirm. Only an order with unfinished work asks to type BORRAR.
+async function clearHubOrder(path, hub, dateLabel){
+  const slug=HUB_SLUG[hub], name=path.split('/').pop(), od=name.replace(/\.csv$/,''), dd=ddmm(bareOrderDate(od))+(/-r2$/.test(od)?' (complemento)':'');
+  toast('Revisando el pedido…', 1500);
+  let st=null, after='';
+  try{
+    const [orderFiles, reportFiles, partFiles]=await Promise.all([sbList(`orders/${slug}/`), sbList(`reports/${slug}/`), sbList(`partials/${slug}/`).catch(()=>[])]);
+    st=await orderStatus(hub, od, partFiles.filter(f=>f.name&&f.name.endsWith('.json')), reportFiles.filter(f=>f.name&&f.name.endsWith('.csv')));
+    const cur=latestOrderFile(orderFiles), rest=latestOrderFile(orderFiles.filter(f=>f.name!==name));
+    if(cur && cur.chosen.name!==name) after='Los armadores no notarán el cambio: no es el pedido que están viendo.';
+    else if(rest) after=`Después de borrarlo, los armadores verán el pedido del ${ddmm(rest.date)}${rest.r2?' (complemento)':''}${rest.date!==todayStr()?' — un pedido viejo':''}.`;
+    else after=`Después de borrarlo, ${hub} se queda sin pedido.`;
+  }catch(_){}
+  const who=st&&(st.armadores||[]).length?` por ${st.armadores.join(', ')}`:'';
+  const what = !st ? 'No se pudo revisar si tiene avance.'
+    : st.kind==='armado' ? 'Este pedido ya está armado y tiene su reporte (el reporte no se borra).'
+    : st.kind==='progreso' ? `Tiene un armado en progreso: ${st.done!=null?`${st.done} de ${st.total} productos`:'hay avance guardado'}${who}. El avance no se borra; queda en 🗂 Respaldos.`
+    : st.kind==='perdido' ? 'Hubo escaneos de este pedido pero no hay avance guardado.' : 'Nadie lo ha empezado.';
+  const body=`${what}${after?`\n\n${after}`:''}\n\nSe guarda un respaldo del pedido por ${RESPALDO_DAYS} días.`;
+  const doDelete=async ()=>{
+    // v2.3/C1 — the order CSV goes to respaldos first; no copy → no delete
+    try{
+      const csv=await sbFetch(path);
+      await writeRespaldo(hub, {kind:'order', orderDate:od, motivo:'pedido_borrado', path, payload:csv});
+    }catch(e){ toast('❌ No se pudo guardar el respaldo — el pedido NO se borró.', 4000); return; }
+    try{ await sbDelete(path); toast(`✓ Pedido de ${hub} eliminado · respaldo por ${RESPALDO_DAYS} días`); loadCoordinatorScreen(); }
+    catch(e){ toast('❌ Error al eliminar: '+e.message); }
+  };
+  if(!st || st.kind==='progreso' || st.kind==='perdido')
+    showTypedConfirm({ title:`⚠ Borrar el pedido de ${hub} (${dd})`, body, word:'BORRAR', okLabel:'Borrar', onOk:doDelete });
+  else showModal(`¿Borrar el pedido de ${hub} (${dd})?`, body, 'Borrar', 'm-danger', doDelete);
 }
 
 async function downloadRemoteReport(path, filename){
@@ -2155,13 +2170,15 @@ async function sbDelete(path){
 // The metrics sidecar path mirrors the report path (reports/…csv -> metrics/…json)
 function metricsPathForReport(reportPath){ return reportPath.replace(/^reports\//,'metrics/').replace(/\.csv$/,'.json'); }
 
-function deleteReport(path, hub, label){
-  showModal(
-    '¿Eliminar reporte?',
-    `Se eliminará el reporte "${label}" de ${hub} y sus métricas.\n\nSe guarda un respaldo por ${RESPALDO_DAYS} días.`,
-    'Eliminar',
-    'm-danger',
-    async ()=>{
+// v2.3/E — a report is the only finished record of an order: always typed BORRAR, and it says what it holds and
+// how much of it was already typed into Retool (registro copilot ticks)
+async function deleteReport(path, hub, label){
+  const name=path.split('/').pop(), {dateStr}=reportDisplayInfo(name);
+  let n=null; try{ const m=await cachedMetrics(metricsPathForReport(path)); if(m) n=m.skusTotal; }catch(_){}
+  let ticks=0; try{ ticks=(JSON.parse(localStorage.getItem(regTicksKey(path))||'[]')||[]).length; }catch(_){}
+  showTypedConfirm({ title:`⚠ Borrar el reporte de ${hub} (pedido ${ddmm(dateStr)})`,
+    body:`Reporte "${label}"${n!=null?` — ${n} productos`:''}. Es el registro terminado de ese pedido; con él se borran sus métricas.${ticks?`\n\nYa se marcaron ${ticks} renglones como capturados en Retool (copiloto de registro).`:''}\n\nSe guarda un respaldo por ${RESPALDO_DAYS} días.`,
+    word:'BORRAR', okLabel:'Borrar', onOk:async()=>{
       // v2.3/C1 — report (+ its metrics sidecar) goes to respaldos first; no copy → no delete
       try{
         const csv=await sbFetch(path);
@@ -2179,8 +2196,7 @@ function deleteReport(path, hub, label){
         toast('✓ Reporte y métricas eliminados'); loadCoordinatorScreen();
       }
       catch(e){ toast('❌ Error al eliminar: '+e.message); }
-    }
-  );
+  } });
 }
 // opts: { extra:{label,fn}, onOk, okLabel } — all optional
 function showInfoModal(title, body, opts){
@@ -4778,7 +4794,7 @@ function requestSaveAndExit(){
   if(done===0){ newOrder(); return; } // nothing to save
   showModal(
     '💾 Guardar y salir',
-    `Se guardará el progreso actual (${done}/${total} productos completados).\n\nPodrás retomar este pedido más tarde desde el mismo hub.`,
+    `Se guardará el progreso actual (${done}/${total} productos completados).\n\nPodrás retomar este pedido más tarde desde el mismo hub.${_syncSlot?`\n\n☁ Este teléfono tiene avance que todavía no llega a la nube (sin conexión desde ${localHM(new Date(_syncSince))}). Se enviará solo cuando haya internet — no borres datos del navegador ni cambies de teléfono hasta que se envíe.`:''}`,
     'Guardar y salir',
     'm-ok',
     saveAndExit
@@ -4985,7 +5001,7 @@ function savePartialProgress(){
     savedAt:serverNow().toISOString(), orderDate:S.orderDate, deviceId:getDeviceId() // v2.2/F6
   };
   setLocalBackupChip(!trySetLocalStorage(partialKey(S.hub,S.orderDate),JSON.stringify(payload))); // v2.2/F7
-  savePartialToSupabase(payload,seq).catch(()=>{});
+  savePartialToSupabase(payload,seq).then(()=>partialSynced(payload), ()=>queuePartialSync(payload)); // v2.3/D5
   const done=S.results.filter(r=>r&&r.status!==ITEM_STATUS.PENDING).length;
   recordPartialEvent(S.hub, S.orderDate, S.ronda, 'saved', null, done, S.items.length); // v2.2/F10
 }
@@ -4998,6 +5014,70 @@ async function savePartialToSupabase(payload, seq){
   const path=partialVersionPath(payload.hub, payload.orderDate, epochMs, seq);
   await sbUpload(path, JSON.stringify(payload), 'application/json');
   prunePartialVersions(payload.hub, payload.orderDate).catch(()=>{});
+}
+
+/* v2.3/D5 — a save that didn't reach the server is retried until it does (5 s, 15 s, then every 60 s — also on
+   reconnect, from the home pill, and after a reload: the slot lives in localStorage). Only the NEWEST unsent payload
+   is kept; any newer save that lands supersedes it. After 2 minutes behind, the list shows "☁ Sin sincronizar". */
+const SYNC_KEY='calii_partial_pending_sync', SYNC_CHIP_MS=120000, SYNC_MAX_AGE_MS=3*86400000;
+let _syncSlot=null, _syncSince=0, _syncTimer=null, _syncAttempt=0;
+function partialSynced(payload){
+  if(!_syncSlot) return;
+  const a=_syncSlot.payload;
+  if(a.hub===payload.hub && a.orderDate===payload.orderDate && (Date.parse(payload.savedAt)||0)>=(Date.parse(a.savedAt)||0)) clearPartialSync();
+}
+function queuePartialSync(payload){
+  if(_syncSlot && (Date.parse(_syncSlot.payload.savedAt)||0)>(Date.parse(payload.savedAt)||0)) return; // keep the newest
+  _syncSlot={payload}; if(!_syncSince) _syncSince=Date.now();
+  try{ localStorage.setItem(SYNC_KEY, JSON.stringify({payload, since:_syncSince})); }catch(_){}
+  _syncAttempt=0; scheduleSync(); updateSyncChip(); updateOutboxPill();
+  setTimeout(updateSyncChip, SYNC_CHIP_MS+500);
+}
+function clearPartialSync(onlyFor){
+  if(!_syncSlot) return;
+  if(onlyFor && (_syncSlot.payload.hub!==onlyFor.hub || _syncSlot.payload.orderDate!==onlyFor.orderDate)) return;
+  _syncSlot=null; _syncSince=0; clearTimeout(_syncTimer); _syncTimer=null;
+  try{ localStorage.removeItem(SYNC_KEY); }catch(_){}
+  updateSyncChip(); updateOutboxPill();
+}
+function scheduleSync(){ clearTimeout(_syncTimer); _syncTimer=setTimeout(runPartialSync, [5000,15000][_syncAttempt]??60000); }
+async function runPartialSync(){
+  if(!_syncSlot) return;
+  const payload=_syncSlot.payload; _syncAttempt++;
+  try{ await savePartialToSupabase(payload, _partialSaveSeq); partialSynced(payload); if(_syncSlot) clearPartialSync(); }
+  catch(_){ scheduleSync(); updateSyncChip(); }
+}
+function updateSyncChip(){
+  const el=document.getElementById('sync-chip'); if(!el) return;
+  const show=!!_syncSlot && Date.now()-_syncSince>=SYNC_CHIP_MS;
+  el.style.display=show?'block':'none';
+  if(show) el.textContent=`☁ Sin sincronizar desde ${localHM(new Date(_syncSince))} — tu avance está en este teléfono`;
+}
+function loadPendingSync(){
+  try{
+    const j=JSON.parse(localStorage.getItem(SYNC_KEY)||'null');
+    if(!j||!j.payload) return;
+    if(Date.now()-(j.since||0)>SYNC_MAX_AGE_MS){ localStorage.removeItem(SYNC_KEY); return; } // too old to push blindly
+    _syncSlot={payload:j.payload}; _syncSince=j.since||Date.now(); _syncAttempt=0; scheduleSync(); updateOutboxPill();
+  }catch(_){}
+}
+/* v2.3/D6 — once a day: remove this phone's partial copies for orders older than 7 days that HAVE a report.
+   Never a copy that might be the only one (no report, or the report list couldn't be read). */
+async function sweepLocalPartials(){
+  const today=todayStr();
+  try{ if(localStorage.getItem('calii_local_sweep')===today) return; }catch(_){ return; }
+  const cut=localDateStr(new Date(serverNow().getTime()-7*86400000)), byHub={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i), m=k&&k.match(/^calii_partial_(.+)__(\d{4}-\d{2}-\d{2}(?:-r2)?)$/);
+    if(!m || bareOrderDate(m[2])>=cut) continue;
+    const hub=HUBS.find(h=>slugify(h)===m[1]); if(!hub) continue;
+    (byHub[hub]=byHub[hub]||[]).push({k, od:m[2]});
+  }
+  for(const hub of Object.keys(byHub)){
+    let reports; try{ reports=(await sbList(`reports/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')); }catch(_){ return; } // offline → try tomorrow
+    for(const x of byHub[hub]){ if((await reportsForOrder(hub, x.od, reports)).length){ try{ localStorage.removeItem(x.k); }catch(_){} } }
+  }
+  try{ localStorage.setItem('calii_local_sweep', today); }catch(_){}
 }
 
 async function prunePartialVersions(hub, orderDate){
@@ -5129,6 +5209,7 @@ async function clearPartialSave(hub, orderDate, reason, done, total, opts){
     catch(e){ console.warn('respaldo no guardado — no se borra el partial', e); return false; }
   }
   try{ localStorage.removeItem(partialKey(hub, orderDate)); }catch(_){}
+  clearPartialSync({hub, orderDate}); // v2.3/D5
   recordPartialEvent(hub, orderDate, null, 'cleared', reason||null, done, total);
   const prefix=`partials/${HUB_SLUG[hub]}/`;
   let files=[];
@@ -5407,13 +5488,9 @@ function confirmDiscardPartialSave(){
   const workers=[...new Set(p.results.filter(r=>r.assembler).map(r=>r.assembler))];
   const workerStr=workers.length?workers.join(', '):'un armador desconocido';
   const dd=(p.orderDate||'').slice(0,10).split('-').slice(1).reverse().join('/');
-  showModal(
-    '⚠ Empezar de cero',
-    `Se perderán los ${done} de ${total} productos ya armados por ${workerStr} el ${dd}.\n\nTendrás que armar todo el pedido otra vez. El coordinador puede recuperarlo durante ${RESPALDO_DAYS} días.`,
-    'Sí, empezar de cero',
-    'm-danger',
-    discardPartialSave
-  );
+  showTypedConfirm({ title:'⚠ Empezar de cero',
+    body:`Se perderán los ${done} de ${total} productos ya armados por ${workerStr} el ${dd}.\n\nTendrás que armar todo el pedido otra vez. El coordinador puede recuperarlo durante ${RESPALDO_DAYS} días.`,
+    word:'BORRAR', okLabel:'Empezar de cero', onOk:discardPartialSave }); // v2.3/E
 }
 
 function resumePartialSave(){
@@ -5468,7 +5545,9 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncCloc
 loadImageDB();
 loadAssemblers();
 updateOutboxPill();
+loadPendingSync(); // v2.3/D5 — progress that didn't reach the server before the last reload
 if(outboxRead().length){ flushOutbox(); startOutboxTimer(); }
+setTimeout(()=>sweepLocalPartials().catch(()=>{}), 20000); // v2.3/D6 — after boot, never competing with it
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
 </script>
 </body>

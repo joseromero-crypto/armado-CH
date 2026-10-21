@@ -437,9 +437,9 @@ With misclicks, rows read like:
 | 2 ✅ built 2026-10-20 (uncommitted) | **A** coordinator pages | Frame for everything below; pure UI, low risk. Also: hub cards wrap to two lines on a phone (the name was squeezed to "M C"); the partial-events log stays on Faltantes until Respaldos exists (Phase 4) |
 | 3 ✅ built 2026-10-20 (uncommitted) | **B** status + morning banner + historial · resume guard for finished orders · **perf**: request queue (max 8, 429 retry), two-stage load, maintenance once a day — the first build fired ~47 requests per open and Supabase rate-limited them (pages empty) | Didn't need the C4 view: status uses the bucket lists, metrics sidecars (cached) and a `limit=1` picks check; the view waits for Respaldos (Phase 4). Pre-v2.3 multi-day reports are matched through their sidecar's `orderDate` |
 | 4 ✅ built 2026-10-21 (uncommitted) | **C2/C3/C5** Respaldos panel + upload stop for unfinished orders + Cerrar como terminado | Restaurar for a partial only on the order loaded now and with no report; the lost-progress list needs the `picks_por_pedido` view (C4) — degrades to a note without it |
-| 5 | **E** careful deletes | |
+| 5 ✅ built 2026-10-21 (uncommitted) | **E** careful deletes | Order 🗑 typed only with unfinished work attached (finished-order deletes are daily routine); report 🗑, "Subir y borrar", "Empezar de cero" always typed |
 | 6 ✅ built 2026-10-20 (uncommitted) | **F** verificar captura | Built ahead of 4–5. Additions over the spec: rows sorted worst-first; a ⛔ file hides its rows; status chip + banner count on Pedidos. **Changed by Jose:** no 🟡 "faltante sin marcar" — only real mistakes; **per-hub cards like Cargar pedidos**, the order cross-check is a wrong-file guard (mismatch → warning + re-upload, never saved) |
-| 7 | **D5/D6** retry chip + local cleanup | |
+| 7 ✅ built 2026-10-21 (uncommitted) | **D5/D6** retry chip + local cleanup | Unsent progress also counted in the home pill |
 
 Each phase: build on localhost with Supabase writes stubbed, ≤3 quick checks, ship when the set works, bump
 `CACHE_NAME`, update the handoff in the same commit.

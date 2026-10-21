@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p4')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p5')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -172,6 +172,8 @@ All access is wrapped in try/catch. Writes that matter go through `trySetLocalSt
 | `calii_registro_ticks_{reportPath}` | ticked rows in the registration copilot | forever |
 | `calii_sum_sort` | summary-screen sort preference | forever |
 | `calii_coord_page` | last coordinator page (v2.3) | forever |
+| `calii_partial_pending_sync` | newest partial save that didn't reach the server `{payload, since}` (v2.3/D5) | until it lands, is superseded, or is >3 days old |
+| `calii_local_sweep` | day the old-local-copies sweep last ran (v2.3/D6) | overwritten daily |
 | `calii_coord_maint` | day the coordinator maintenance (sweep + respaldo pruning) last ran on this device | overwritten daily |
 
 ---
@@ -253,7 +255,8 @@ Coordinador (PIN) · Armar Pedido · 📖 Manual · `⏳ N pendiente(s) de envia
 7. **📋 Pedidos armados** — finished reports for orders still in the bucket; opens the summary read-only.
 
 ### 7.3 List (assembling)
-- Header row 1: `←` (`cancelOrBack`) · hub · ❓ legend · 💾 save & exit · `🔁 N` chip.
+- Header row 1: `←` (`cancelOrBack`) · hub · ❓ legend · 💾 save & exit · `🔁 N` chip. Under the header: the
+  `☁ Sin sincronizar` chip (v2.3/D5) and the `⚠ Sin respaldo local` chip when they apply.
   Row 2: `N/N` (tap = refresh semáforo) · Finalizar pedido. Then `Todos · Pendientes` filter, progress bar.
   `--list-header-h` keeps the panel's sticky title and row scroll offset aligned with this header.
 - Rows sorted by `Posición armado` (`parsePos` → `[letter, n1, n2]`). Pending rows never move.
@@ -350,8 +353,15 @@ any day can resume it.
 - Remote: **POST a new versioned file** `{orderDate}__{epochMs}_{seq}.json`. Never overwrites, so a remote
   copy always exists. After a 2xx, `prunePartialVersions` deletes all but the newest **5** (`PARTIAL_KEEP_VERSIONS`).
   `_partialSaveSeq` drops a save superseded by a newer save or a clear before it POSTs.
-- The remote write is fire-and-forget with **no retry and no outbox**. A failed write is covered by the
-  next save, the local copy, and `picks`.
+- **A failed remote write is retried (v2.3/D5).** The newest unsent payload sits in one slot (`_syncSlot`, mirrored
+  to `calii_partial_pending_sync` so a reload keeps it); retries at 5 s, 15 s, then every 60 s, plus on `online`,
+  from the home pill and on boot (`loadPendingSync`; slots older than 3 days are dropped, not pushed). Any newer
+  save that lands supersedes it (`partialSynced`); a clear drops it (`clearPartialSync`). After 2 min behind, the
+  list shows `☁ Sin sincronizar desde HH:MM — tu avance está en este teléfono` (`#sync-chip`); the home pill counts
+  it; *Guardar y salir* warns not to clear browser data or switch phones until it's sent.
+- **Old local copies (v2.3/D6):** once a day, ~20 s after boot (`sweepLocalPartials`, stamp `calii_local_sweep`),
+  this phone's `calii_partial_*` keys older than 7 days are removed — only when the order has a report
+  (`reportsForOrder`). No report, or reports unreadable → kept.
 - Each save writes a `partial_events` row (`saved`).
 
 **Load** (`loadPartialProgress`): reads local **and** remote, returns the newer by `savedAt`, and writes a
@@ -446,7 +456,14 @@ Respaldos.
 
 **Typed confirmations** (`showTypedConfirm`): the instruction is spelled out ("escribe la palabra CERRAR en el cuadro
 de abajo y toca 'Cerrar'"), the button stays grey until the word matches (`typedWord`: any case, accents and spaces
-ignored). Used by SUBIR (upload stop) and CERRAR; Phase 5 adds BORRAR.
+ignored). Used by SUBIR (upload stop), CERRAR, and BORRAR (v2.3/E):
+
+| Action | Confirm |
+|---|---|
+| Order 🗑 (`clearHubOrder`) | pre-flight: status of that order + **what assemblers will see afterwards** (previous order, none, or "no change — not the order they're viewing"). Finished/not started → plain confirm (deleting yesterday's finished order is a daily routine). In progress / lost / unknown → typed **BORRAR** |
+| Report 🗑 (`deleteReport`) | always typed **BORRAR**; says how many products and how many rows were already ticked in the registro copilot |
+| "Subir y borrar progreso" (same-day re-upload over progress) | typed **BORRAR**; "Subir sin borrar el progreso" stays one tap |
+| Assembler "Empezar de cero" | typed **BORRAR** |
 
 ### 8.3 Recovery from picks (🛟)
 `rebuildPartialFromPicks(hub, orderDate, ronda)`:
@@ -668,9 +685,9 @@ Found while reading the code on 2026-10-20. None fixed yet.
    the upload stop warns before it happens, and 🗂 Respaldos lists every partial of a hub (view, close, restore).
 2. ~~🛟 recovery needs the order CSV~~ — **fixed (v2.3 Phase 4):** falls back to `pedido_completo` (R1).
 3. **The 🛟 card doesn't block Iniciar Armado**, so a fresh start buries recoverable work.
-4. **Order 🗑 is a single confirmation that checks nothing**, and silently promotes the previous date.
-5. Remote partial writes have no retry/outbox (covered by the next save + local + picks).
-6. Local partials for old order dates are never cleaned up; they count against the ~5 MB quota.
+4. ~~Order 🗑 checks nothing~~ — **fixed (v2.3 Phase 5):** pre-flight + typed BORRAR when work is attached (§8.2c).
+5. ~~Remote partial writes have no retry~~ — **fixed (v2.3 Phase 7, D5).**
+6. ~~Local partials never cleaned up~~ — **fixed (v2.3 Phase 7, D6):** finished orders older than 7 days.
 7. The legacy flat partial fallback is still read (the v2.2 plan said to drop it after 30 days).
 
 **Date-equality assumptions (report filename date ≠ order date)**
