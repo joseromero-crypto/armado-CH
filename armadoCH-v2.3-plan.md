@@ -101,9 +101,9 @@ order has products confirmed after the report's time (a real second pass), which
 reporte*. The order source is `pedido_completo/`, because the
 order CSV itself is deleted daily.
 
-Each hub card on **Cargar pedidos** shows its current order and status, plus any **older unfinished order**
-for that hub as a second line (`03/09 · 🟡 En progreso 254/421 · Israel`) — today those become invisible the
-moment a newer order is uploaded (H§12.1).
+Each hub card on **Cargar pedidos** shows **only its current order** and its status. **Decided 2026-10-20 (Jose):**
+older orders are not shown on the cards ("status is about the current uploaded order"); yesterday is covered by the
+morning banner, and anything older lives in Respaldos.
 
 ## B2 — Morning banner
 
@@ -192,8 +192,8 @@ problem to catch **before** it happens, not the assembler's to sort out afterwar
   > Si subes el pedido nuevo, los armadores dejarán de ver el del 03/09.
   > [ Cancelar ] [ Ver Respaldos ] [ Subir de todos modos… ] ← typed BORRAR-style confirm (`SUBIR`)
   The override is logged to `partial_events` (`coordinator_override`).
-- **Status page:** an older unfinished order shows on the hub card in **red** (`⛔ 03/09 sin terminar —
-  254/421`) and counts first in the morning banner. It stays red until finished or explicitly closed.
+- **Status page:** *(dropped 2026-10-20 — cards show only the current order; the upload stop above is where an
+  unfinished order gets caught)*
 - **Assembler side: no change.** Assemblers keep seeing only the hub's newest order. The old progress is not
   lost (it stays in Respaldos); the coordinator decides whether to restore it as the current order.
 - If picks show lost progress and nothing is saved, the "recuperar" card **blocks Iniciar Armado** until it's
@@ -435,7 +435,7 @@ With misclicks, rows read like:
 | 0 | ~~V1–V3~~ done (§0) | |
 | 1 ✅ built 2026-10-20 (uncommitted) | **C1** respaldos before every delete (+ sweep resumed leftovers) · **D1** filenames · **D2** r2 helper · **D3** · **D4** `sbReplace` · **D4b** paging | Makes everything undoable, makes "is this finished?" answerable, stops the 1000-row truncation before daily picks pass it |
 | 2 ✅ built 2026-10-20 (uncommitted) | **A** coordinator pages | Frame for everything below; pure UI, low risk. Also: hub cards wrap to two lines on a phone (the name was squeezed to "M C"); the partial-events log stays on Faltantes until Respaldos exists (Phase 4) |
-| 3 | **B** status + morning banner + historial (needs C4 SQL) | |
+| 3 ✅ built 2026-10-20 (uncommitted) | **B** status + morning banner + historial · resume guard for finished orders · **perf**: request queue (max 8, 429 retry), two-stage load, maintenance once a day — the first build fired ~47 requests per open and Supabase rate-limited them (pages empty) | Didn't need the C4 view: status uses the bucket lists, metrics sidecars (cached) and a `limit=1` picks check; the view waits for Respaldos (Phase 4). Pre-v2.3 multi-day reports are matched through their sidecar's `orderDate` |
 | 4 | **C2/C3/C5** Respaldos panel + upload stop for unfinished orders + Cerrar como terminado | |
 | 5 | **E** careful deletes | |
 | 6 | **F** verificar captura | Can start in parallel with 3–5: it only reads reports |

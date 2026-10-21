@@ -101,10 +101,16 @@ Significa que **ya hay un armado a medias** para ese hub — tuyo o de un compa�
 
 - **↩ Continuar pedido** — retoma donde se quedó, con todo lo ya armado. Puedes continuar el pedido de otra
   persona sin problema; la app guarda quién armó cada renglón.
-- **Nuevo armado** — descarta lo anterior y empieza de cero.
+- **Empezar de cero** — descarta lo anterior y empieza de cero. Antes te pide confirmar y te dice cuántos
+  productos se pierden. El avance se guarda en un respaldo que el coordinador puede recuperar durante 30 días.
 
 Mientras el aviso esté ahí, *Iniciar Armado* está bloqueado. Es a propósito: para que nadie borre por accidente
 el trabajo de alguien más.
+
+### Si aparece un aviso verde: "Este pedido ya se terminó"
+
+Ese pedido ya tiene reporte y no hay nada pendiente. No hay que continuarlo. Si crees que falta algo, avísale al
+coordinador.
 
 ### Paso 2 — La lista
 
@@ -312,7 +318,17 @@ La app recuerda la última sección que usaste.
 
 ### Cargar pedidos
 
-Una fila por hub. Cada una muestra la última carga o `Sin pedido`.
+Arriba sale el resumen de **ayer**: *Pedidos del lunes 19 oct · 6 de 7 armados · 1 sin terminar*. Los hubs que no
+terminaron aparecen como botón; tócalo para ir a su tarjeta. Cada mañana todo debería estar ✅.
+
+Una tarjeta por hub. Cada una muestra el pedido cargado y en qué va:
+
+| Estado | Qué significa |
+|---|---|
+| ⚪ **Pendiente** | Nadie ha empezado |
+| 🟡 **En progreso 112/301** | Alguien lo está armando; dice quién y hace cuánto se guardó |
+| ✅ **Armado 152/152** | Terminado y con reporte (o *con pendientes* si quedaron productos sin armar) |
+| 🔴 **Se perdió el avance** | Hubo escaneos pero no hay avance guardado — usa 🛟 **Recuperar** |
 
 1. Toca el hub, elige el archivo CSV.
 2. La app revisa el archivo y sube.

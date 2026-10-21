@@ -118,10 +118,27 @@
     .rep-day[open]>summary::before{content:'▾'}
     .rep-day-title{font-size:15px;font-weight:800;color:var(--gray-900);flex:1}
     .rep-day-count{font-size:12px;font-weight:700;color:var(--gray-500);white-space:nowrap}
-    /* hub card: name on its own line, badge + actions beneath — on a phone the single row squeezed the name to "M C" */
-    #coord-hub-list .coord-hub-row{flex-wrap:wrap;row-gap:8px}
-    #coord-hub-list .coord-hub-name{flex:1 1 100%}
-    #coord-hub-list .coord-hub-badge{margin-right:auto}
+    /* v2.3/B — hub cards with order status (name + status chip, order date, who/when, actions) */
+    .hub-card{background:white;border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow-sm)}
+    .hub-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .hub-card-name{font-weight:800;font-size:15px;color:var(--gray-900)}
+    .hub-card-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;font-size:12px;color:var(--gray-600)}
+    .hub-card-detail{font-size:12px;color:var(--gray-700);margin-top:4px}
+    .hub-card-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+    .st-chip{font-size:12px;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap}
+    .st-ok{background:var(--green-light);color:var(--green-dark)}
+    .st-prog{background:#FFF8E1;color:#8a5a00}
+    .st-lost{background:var(--red-light);color:var(--red)}
+    .st-pend{background:var(--gray-100);color:var(--gray-600)}
+    /* v2.3/B2 — morning banner */
+    .morning-banner{border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;border:1.5px solid}
+    .mb-ok{background:var(--green-light);border-color:var(--green)}
+    .mb-pend{background:var(--gray-100);border-color:var(--gray-300)}
+    .mb-warn{background:#FFF8E1;border-color:#FFA000}
+    .mb-title{font-size:14px;font-weight:800;color:var(--gray-900)}
+    .mb-sub{font-size:13px;color:var(--gray-700);margin-top:2px}
+    .mb-hubs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .mb-hub{border:1px solid var(--gray-300);background:white;border-radius:16px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--gray-700);cursor:pointer}
 
     /* METRICS (coordinator) */
     .metrics-body{padding:14px 12px 60px;max-width:900px;margin:0 auto;width:100%}
@@ -504,6 +521,7 @@
   </div>
   <div class="coord-body">
     <section class="coord-page" id="coord-page-pedidos">
+      <div id="coord-morning"></div>
       <div class="coord-section-title" style="margin-top:0">Cargar pedidos</div>
       <div id="coord-hub-list"></div>
     </section>
@@ -858,8 +876,24 @@ function renderClockWarning(){
 }
 function orderPath(hub){ return `orders/${HUB_SLUG[hub]}/${todayStr()}.csv`; }
 
+/* v2.3 — every Supabase call goes through sbReq: at most SB_MAX_INFLIGHT in flight, and a 429 (rate limit) waits
+   and retries instead of failing. The coordinator screen fires dozens of requests at once; unthrottled, Supabase
+   answered 429 and whole hubs rendered empty ("pedidos no cargan", 2026-10-20). */
+const SB_MAX_INFLIGHT=8;
+let _sbInflight=0; const _sbQueue=[];
+function _sbAcquire(){ if(_sbInflight<SB_MAX_INFLIGHT){ _sbInflight++; return Promise.resolve(); } return new Promise(r=>_sbQueue.push(r)); }
+function _sbRelease(){ const next=_sbQueue.shift(); if(next) next(); else _sbInflight--; }
+async function sbReq(url, opts){
+  for(let attempt=0;;attempt++){
+    await _sbAcquire();
+    let r; try{ r=await fetch(url, opts); } finally{ _sbRelease(); }
+    if(r.status!==429 || attempt>=4) return r;
+    const ra=Number(r.headers.get('Retry-After'));
+    await new Promise(res=>setTimeout(res, (ra>0?ra*1000:500*2**attempt)+Math.random()*250));
+  }
+}
 async function sbUpload(path, content, contentType='text/csv'){
-  const r = await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`,{
+  const r = await sbReq(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`,{
     method:'POST',
     headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':contentType,'x-upsert':'true'},
     body: content
@@ -867,12 +901,12 @@ async function sbUpload(path, content, contentType='text/csv'){
   if(!r.ok){ const e=await r.text(); throw new Error(`${r.status}: ${e}`); }
 }
 async function sbFetch(path){
-  const r = await fetch(`${SB_URL}/storage/v1/object/public/${BUCKET}/${path}`);
+  const r = await sbReq(`${SB_URL}/storage/v1/object/public/${BUCKET}/${path}`);
   if(!r.ok) throw new Error(`${r.status}`);
   return r.text();
 }
 async function sbList(prefix){
-  const r = await fetch(`${SB_URL}/storage/v1/object/list/${BUCKET}`,{
+  const r = await sbReq(`${SB_URL}/storage/v1/object/list/${BUCKET}`,{
     method:'POST',
     headers:{'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
     body: JSON.stringify({prefix, limit:500, sortBy:{column:'name',order:'desc'}})
@@ -883,7 +917,7 @@ async function sbList(prefix){
 
 /* ── POSTGREST (picks table — §3.4) ── */
 async function pgInsert(table, row){
-  const r = await fetch(`${SB_URL}/rest/v1/${table}`,{
+  const r = await sbReq(`${SB_URL}/rest/v1/${table}`,{
     method:'POST',
     headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
     body: JSON.stringify(row)
@@ -891,7 +925,7 @@ async function pgInsert(table, row){
   if(!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
 }
 async function pgSelect(table, query){
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${query}`,{
+  const r = await sbReq(`${SB_URL}/rest/v1/${table}?${query}`,{
     headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
   });
   if(!r.ok) throw new Error(`${r.status}`);
@@ -1508,7 +1542,7 @@ try{ const p=localStorage.getItem('calii_coord_page'); if(COORD_PAGES.includes(p
 let _coordHubData=null, _coordHubDataP=null, _armadosView='hoy';
 // ↺, PIN entry, and every action that changes the bucket call this: drop cached data, reload the open page.
 function loadCoordinatorScreen(){
-  _coordHubData=null; _coordHubDataP=null; _cierreCache=null;
+  _coordHubData=null; _coordHubDataP=null; _coordStatusP=null; _cierreCache=null;
   S._archiveLoaded=false; S._archiveData=[];
   document.getElementById('cierre-result').innerHTML='';
   flushOutbox(); // §3.6 — a good moment to drain any queued uploads
@@ -1525,23 +1559,102 @@ async function showCoordPage(name){
   document.querySelectorAll('.coord-page').forEach(sec=>{ sec.style.display = sec.id==='coord-page-'+name ? 'block' : 'none'; });
   window.scrollTo(0,0);
   if(name==='pedidos'){
-    if(!_coordHubData) document.getElementById('coord-hub-list').innerHTML='<div class="coord-empty">Verificando…</div>';
-    renderPedidosPage(await getCoordHubData());
+    if(!_coordHubData) document.getElementById('coord-hub-list').innerHTML='<div class="coord-empty">Cargando pedidos…</div>';
+    try{
+      const d=await getCoordHubData();
+      if(_coordPage==='pedidos') renderPedidosPage(d); // cards right away; statuses fill in below
+      await getCoordStatuses();
+      if(_coordPage==='pedidos') renderPedidosPage(d);
+    }catch(e){ coordLoadFailed('coord-hub-list', e); }
   } else if(name==='armados'){
     if(!_coordHubData) document.getElementById('coord-reports').innerHTML='<div class="coord-empty">Cargando reportes…</div>';
-    renderArmadosPage(await getCoordHubData());
+    try{ renderArmadosPage(await getCoordHubData()); }catch(e){ coordLoadFailed('coord-reports', e); }
   } else if(name==='faltantes') loadInvToday();
   else if(name==='cierre') refreshCierreStatus();
-  else if(name==='armadores'){ await loadAssemblers(); renderAssemblerList(); }
+  else if(name==='armadores'){ await loadAssemblers(); renderAssemblerList(); } // loadAssemblers never throws
   else if(name==='imagenes') refreshImgDbStatus();
 }
 function getCoordHubData(){
   if(_coordHubData) return Promise.resolve(_coordHubData);
-  if(!_coordHubDataP) _coordHubDataP=fetchCoordHubData().then(d=>{ _coordHubData=d; return d; });
+  if(!_coordHubDataP) _coordHubDataP=fetchCoordHubData().then(d=>{ _coordHubData=d; return d; }, e=>{ _coordHubDataP=null; throw e; });
   return _coordHubDataP;
 }
-// Order status + reports + partials for all hubs, in parallel
-function fetchCoordHubData(){
+let _coordStatusP=null;
+function getCoordStatuses(){
+  if(!_coordStatusP) _coordStatusP=getCoordHubData().then(computeCoordStatuses).catch(e=>{ _coordStatusP=null; throw e; });
+  return _coordStatusP;
+}
+// A page that fails to load says so, with a retry — never an endless "Cargando…"
+function coordLoadFailed(elId, e){
+  const el=document.getElementById(elId); if(!el) return;
+  console.warn('coordinador:', e);
+  el.innerHTML=`<div class="coord-empty">⚠ No se pudo cargar (${escH(String(e&&e.message||e).slice(0,60))}). <button class="btn-retry" onclick="loadCoordinatorScreen()">Reintentar</button></div>`;
+}
+/* ── v2.3/B — ORDER STATUS ──
+   One status per order, from what is in the bucket: a report (+ its metrics sidecar for N/M), the newest partial,
+   and — only when neither exists — a one-row picks check for lost progress. A report wins, unless a partial for
+   the same order has products confirmed after the report's time (a real second pass). */
+async function cachedMetrics(path){
+  let c={}; try{ c=JSON.parse(localStorage.getItem(METRICS_CACHE_KEY)||'{}')||{}; }catch(_){}
+  if(c[path]) return c[path];
+  try{
+    const m=JSON.parse(await sbFetch(path));
+    if(m&&m.v){ try{ const c2=JSON.parse(localStorage.getItem(METRICS_CACHE_KEY)||'{}')||{}; c2[path]=m; localStorage.setItem(METRICS_CACHE_KEY, JSON.stringify(c2)); }catch(_){} }
+    return m;
+  }catch(_){ return null; }
+}
+function partialInfo(p){
+  const res=p.results||[];
+  return { done:res.filter(r=>r&&r.status!=='pending').length, total:res.length,
+    armadores:[...new Set(res.map(r=>r&&r.assembler).filter(Boolean))], at:Date.parse(p.savedAt)||0,
+    lastConfirm:Math.max(0, ...res.map(r=>Date.parse(r&&r.confirmedAt)||0)) };
+}
+// Reports belonging to order `od` (bare date, or …-r2), newest first: [{name, ep}]. v2.3 names start with the order
+// date. Pre-v2.3 names carry only the FINISH date, so an order finished on a later day isn't found by prefix
+// (Zapopan's 11/09 was finished 15/09); its metrics sidecar records the real orderDate — check legacy-named reports
+// finished in the 3 weeks after the order (sidecars are cached on the device). Shared by status, the resume guard
+// and the leftover sweep, so the three can never disagree about "is this order finished?".
+async function reportsForOrder(hub, od, reportFiles){
+  const r2=/-r2$/.test(od), bare=bareOrderDate(od);
+  const reps=reportFiles.filter(f=>f.name.startsWith(bare) && /_r2_/.test(f.name)===r2)
+    .map(f=>({name:f.name, ep:reportFinishEpoch(f.name)||0}));
+  if(!reps.length){
+    const until=localDateStr(new Date(Date.parse(bare+'T12:00:00Z')+21*86400000));
+    const cands=reportFiles.filter(f=>{ const d=f.name.slice(0,10), rest=f.name.slice(11);
+      return d>bare && d<=until && /_r2_/.test(f.name)===r2 && !/^(r2_)?\d{4}-\d{2}-\d{2}_/.test(rest); });
+    for(const f of cands){
+      const m=await cachedMetrics(metricsPathForReport(`reports/${HUB_SLUG[hub]}/${f.name}`));
+      if(m && m.orderDate===od) reps.push({name:f.name, ep:reportFinishEpoch(f.name)||0});
+    }
+  }
+  return reps.sort((a,b)=>b.ep-a.ep);
+}
+// → {kind:'pendiente'|'progreso'|'armado'|'perdido', done, total, armadores, at(ms), continued, reportName, unreadable}
+async function orderStatus(hub, od, partialFiles, reportFiles){
+  const r2=/-r2$/.test(od), bare=bareOrderDate(od);
+  const reps=await reportsForOrder(hub, od, reportFiles);
+  const rep=reps[0]||null;
+  let partial=null;
+  if(partialFiles.some(f=>isPartialFileForDate(f.name, od))){
+    try{ partial=(await fetchRemotePartial(hub, od, partialFiles)).partial||null; }catch(_){ partial={unreadable:true}; }
+  }
+  if(rep){
+    if(partial && !partial.unreadable){
+      const pi=partialInfo(partial);
+      if(pi.lastConfirm>rep.ep+60000) return {kind:'progreso', continued:true, ...pi, reportName:rep.name};
+    }
+    const m=await cachedMetrics(metricsPathForReport(`reports/${HUB_SLUG[hub]}/${rep.name}`));
+    return {kind:'armado', done:m?m.skusArmados:null, total:m?m.skusTotal:null, armadores:m?(m.armadores||[]):[], at:rep.ep, reportName:rep.name};
+  }
+  if(partial) return partial.unreadable ? {kind:'progreso', unreadable:true} : {kind:'progreso', ...partialInfo(partial)};
+  let picks=false;
+  try{ picks=(await pgSelect('picks', `hub=eq.${encodeURIComponent(hub)}&order_date=eq.${bare}&ronda=eq.${r2?2:1}&select=sku_key&limit=1`)).length>0; }catch(_){}
+  return {kind: picks?'perdido':'pendiente'};
+}
+
+// Stage 1 — the per-hub file lists (orders, reports, partials, pedido_completo). Enough to draw the Pedidos cards and
+// the whole Armados page. Stage 2 (computeCoordStatuses) adds statuses on top; Armados never waits for it.
+async function fetchCoordHubData(){
   return Promise.all(HUBS.map(async hub=>{
     try{
       const [orderFiles, reportFiles, partialFiles]=await Promise.all([
@@ -1552,33 +1665,103 @@ function fetchCoordHubData(){
       // v2.3/D2 — same "current order" rule assemblers use. cutoffDate is the bare date (report names start with
       // it); currentOd is what assemblers load and the partial's identity (carries -r2 for a complemento).
       const lo=latestOrderFile(orderFiles);
-      const latestOrder=lo?lo.chosen:null;
       const cutoffDate=lo?lo.date:null;
       const currentOd=lo?(lo.r2?`${lo.date}-r2`:lo.date):null;
       const validReports=reportFiles.filter(f=>f.name&&f.name.endsWith('.csv'));
-      const activeReports=cutoffDate ? validReports.filter(f=>f.name.slice(0,10)>=cutoffDate) : [];
-      const archiveReports=cutoffDate ? validReports.filter(f=>f.name.slice(0,10)<cutoffDate) : validReports;
-      // v2.2/F5 — offer recovery only when this exact order has no partial and no report yet, but does have picks.
-      let canRecover=false, recoverRonda=1;
-      if(lo){
-        recoverRonda=lo.r2?2:1;
-        const hasReport=recoverRonda===2
-          ? validReports.some(f=>f.name.startsWith(cutoffDate)&&/_r2_/.test(f.name))
-          : validReports.some(f=>f.name.startsWith(cutoffDate)&&!/_r2_/.test(f.name));
-        const hasPartial=(partialFiles||[]).some(f=>isPartialFileForDate(f.name, currentOd));
-        if(!hasPartial && !hasReport){
-          try{ canRecover=(await pgSelect('picks', `hub=eq.${encodeURIComponent(hub)}&order_date=eq.${encodeURIComponent(cutoffDate)}&ronda=eq.${recoverRonda}&select=sku_key&limit=1`)).length>0; }catch(_){}
-        }
-      }
-      sweepLeftoverPartials(hub, partialFiles||[], validReports).catch(e=>console.warn('sweep partials:',e)); // v2.3/C1
-      pruneRespaldos(hub).catch(()=>{}); // v2.3/C1 — 30-day retention
-      return {hub, lo, latestOrder, cutoffDate, currentOd, activeReports, archiveReports, canRecover, recoverRonda};
-    }catch(e){ return {hub, lo:null, latestOrder:null, cutoffDate:null, currentOd:null, activeReports:[], archiveReports:[], canRecover:false, recoverRonda:1}; }
+      const parts=(partialFiles||[]).filter(f=>f.name&&f.name.endsWith('.json'));
+      return {hub, lo, latestOrder:lo?lo.chosen:null, cutoffDate, currentOd,
+        activeReports: cutoffDate ? validReports.filter(f=>f.name.slice(0,10)>=cutoffDate) : [],
+        archiveReports: cutoffDate ? validReports.filter(f=>f.name.slice(0,10)<cutoffDate) : validReports,
+        recoverRonda: lo&&lo.r2?2:1,
+        pcDates:[], _parts:parts, _reports:validReports};
+    }catch(e){
+      return {hub, lo:null, latestOrder:null, cutoffDate:null, currentOd:null, activeReports:[], archiveReports:[], recoverRonda:1,
+        pcDates:[], _parts:[], _reports:[], loadError:String(e&&e.message||e)};
+    }
   }));
+}
+// Stage 2 — status per hub (mutates hubData): status of the CURRENT order only, canRecover, and the morning banner's
+// "yesterday" (the newest order date before today, from pedido_completo — order CSVs are deleted daily).
+async function computeCoordStatuses(hubData){
+  await Promise.all(hubData.map(async h=>{
+    if(h.loadError) return;
+    try{
+      h.status=h.lo ? await orderStatus(h.hub, h.currentOd, h._parts, h._reports) : null;
+      h.canRecover=!!(h.status&&h.status.kind==='perdido'); // v2.2/F5 — 🛟 exactly when progress was lost
+      // order dates this hub had (for the banner) — pedido_completo, since order CSVs are deleted daily
+      h.pcDates=(await sbList(`pedido_completo/${HUB_SLUG[h.hub]}/`).catch(()=>[]))
+        .map(f=>(f.name||'').replace(/\.json$/,'')).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d));
+    }catch(e){ h.statusError=String(e&&e.message||e); }
+  }));
+  // v2.3/B2 — morning banner
+  const today=todayStr();
+  const prev=hubData.flatMap(h=>h.pcDates).filter(d=>d<today).sort().pop()||null;
+  hubData.morning = prev ? { date:prev, rows: await Promise.all(hubData.filter(h=>h.pcDates.includes(prev)).map(async h=>({
+      hub:h.hub, st: (h.currentOd===prev && h.status) ? h.status : await orderStatus(h.hub, prev, h._parts, h._reports).catch(()=>({kind:'pendiente'})) }))) } : null;
+  hubData.statusDone=true;
+  runCoordMaintenance(hubData); // after the page is drawn, never competing with it
+  return hubData;
+}
+// v2.3/C1 — leftover sweep + respaldo pruning: once a day per device, one hub at a time, in the background.
+async function runCoordMaintenance(hubData){
+  const today=todayStr();
+  try{ if(localStorage.getItem('calii_coord_maint')===today) return; localStorage.setItem('calii_coord_maint', today); }catch(_){ return; } // no storage → skip (file:// tabs)
+  for(const h of hubData){
+    if(h.loadError) continue;
+    try{ await sweepLeftoverPartials(h.hub, h._parts, h._reports); }catch(e){ console.warn('sweep partials:',e); }
+    try{ await pruneRespaldos(h.hub); }catch(_){}
+  }
+}
+
+// "hace 12 min" / "hace 3 h" / "sáb 15:04" — Monterrey time
+function whenLabel(ms, ago){
+  if(!ms) return '';
+  const d=new Date(ms), diff=serverNow().getTime()-ms;
+  if(ago && diff>=0 && diff<3600000) return `hace ${Math.max(1,Math.round(diff/60000))} min`;
+  if(ago && diff>=0 && diff<6*3600000) return `hace ${Math.round(diff/3600000)} h`;
+  const ymd=localDateStr(d), hm=localHM(d);
+  if(ymd===todayStr()) return hm;
+  return `${dayHeading(ymd).split(' ').slice(0,3).join(' ')} ${hm}`.replace(/^(\S+)/,w=>w.slice(0,3).toLowerCase());
+}
+function statusChipHtml(st){
+  if(!st) return '<span class="st-chip st-pend">Sin pedido</span>';
+  const nm=(st.done!=null&&st.total!=null)?` ${st.done}/${st.total}`:'';
+  if(st.kind==='armado') return st.done!=null&&st.total!=null&&st.done<st.total
+    ? `<span class="st-chip st-ok">✅ Armado con pendientes${nm}</span>` : `<span class="st-chip st-ok">✅ Armado${nm}</span>`;
+  if(st.kind==='progreso') return `<span class="st-chip st-prog">🟡 ${st.continued?'Continuado después del reporte':'En progreso'}${nm}</span>`;
+  if(st.kind==='perdido') return '<span class="st-chip st-lost">🔴 Se perdió el avance</span>';
+  return '<span class="st-chip st-pend">⚪ Pendiente</span>';
+}
+function statusDetailText(st){
+  if(!st) return '';
+  const who=(st.armadores||[]).join(', ');
+  if(st.kind==='armado') return [who, st.at?`terminado ${whenLabel(st.at)}`:''].filter(Boolean).join(' · ');
+  if(st.kind==='progreso') return st.unreadable ? 'Hay avance guardado pero no se pudo leer' : [who, st.at?`guardado ${whenLabel(st.at,true)}`:''].filter(Boolean).join(' · ');
+  if(st.kind==='perdido') return 'Hay escaneos pero no hay avance guardado — usa 🛟 Recuperar';
+  return 'Nadie ha empezado';
+}
+function ddmm(ymd){ return `${ymd.slice(8,10)}/${ymd.slice(5,7)}`; }
+
+function renderMorningBanner(m){
+  const el=document.getElementById('coord-morning'); if(!el) return;
+  if(!m||!m.rows.length){ el.innerHTML=''; return; }
+  const rows=m.rows.slice().sort((a,b)=>a.hub.localeCompare(b.hub));
+  const ok=rows.filter(r=>r.st.kind==='armado'), notOk=rows.filter(r=>r.st.kind!=='armado');
+  const conPend=ok.filter(r=>r.st.done!=null&&r.st.total!=null&&r.st.done<r.st.total).length;
+  const cls=notOk.some(r=>r.st.kind==='perdido'||r.st.kind==='progreso')?'warn':(notOk.length?'pend':'ok');
+  const chips=notOk.map(r=>`<button class="mb-hub" onclick="document.getElementById('hubcard-${HUB_SLUG[r.hub]}')?.scrollIntoView({behavior:'smooth',block:'center'})">${statusChipHtml(r.st).replace(/<[^>]+>/g,'')} · ${escH(r.hub)}</button>`).join('');
+  el.innerHTML=`<div class="morning-banner mb-${cls}">
+      <div class="mb-title">${cls==='ok'?'✅ ':''}Pedidos del ${escH(dayHeading(m.date).replace(/^./,c=>c.toLowerCase()))}</div>
+      <div class="mb-sub">${ok.length} de ${rows.length} armados${conPend?` · ${conPend} con pendientes`:''}${notOk.length?` · ${notOk.length} sin terminar`:''}</div>
+      ${chips?`<div class="mb-hubs">${chips}</div>`:''}
+    </div>`;
 }
 
 function renderPedidosPage(hubData){
-  document.getElementById('coord-hub-list').innerHTML=hubData.map(({hub,lo,cutoffDate,currentOd,canRecover,recoverRonda})=>{
+  renderMorningBanner(hubData.morning);
+  const pendingSt=!hubData.statusDone;
+  document.getElementById('coord-hub-list').innerHTML=hubData.map(({hub,lo,cutoffDate,currentOd,canRecover,recoverRonda,status,loadError,statusError})=>{
+    if(loadError) return `<div class="hub-card" id="hubcard-${HUB_SLUG[hub]}"><div class="hub-card-top"><span class="hub-card-name">${escH(hub)}</span></div><div class="hub-card-detail">⚠ No se pudo cargar este hub. <button class="btn-retry" onclick="loadCoordinatorScreen()">Reintentar</button></div></div>`;
     const loaded=!!lo;
     const dateLabel=cutoffDate||'';
     const delBtn=(f,label,title)=>`<button class="coord-del-btn" onclick="clearHubOrder('${escH(`orders/${HUB_SLUG[hub]}/${f.name}`)}','${escH(hub)}','${escH(label)}')" title="${title}">🗑${lo&&lo.r2&&lo.base?(f===lo.r2?' R2':' R1'):''}</button>`;
@@ -1586,17 +1769,22 @@ function renderPedidosPage(hubData){
     const clearBtn=!loaded?'':[lo.base?delBtn(lo.base, dateLabel, 'Eliminar pedido cargado'):'', lo.r2?delBtn(lo.r2, `${dateLabel} (complemento)`, 'Eliminar complemento'):''].join('');
     const noSurtidoBtn=loaded?`<button class="coord-nosurt-btn" onclick="downloadNoSurtido('${escH(hub)}','${escH(dateLabel)}')" title="Descargar SKUs no surtidos (reserva)">📄 No surtido</button>`:'';
     const recoverBtn=canRecover?`<button class="coord-del-btn" onclick="coordRecoverPartial('${escH(hub)}','${escH(currentOd)}',${recoverRonda})" title="Reconstruir el progreso perdido desde el historial de picks">🛟 Recuperar</button>`:'';
-    // counts remembered from this device's last upload (falls back to the date alone)
+    // counts remembered from this device's last upload
     let sub='';
-    try{ const c=JSON.parse(localStorage.getItem('calii_ordercount_'+HUB_SLUG[hub])||'null'); if(c&&c.date===dateLabel) sub=` · ${c.activos} activos${c.reserva?` · ${c.reserva} reserva`:''}`; }catch(_){}
+    try{ const c=JSON.parse(localStorage.getItem('calii_ordercount_'+HUB_SLUG[hub])||'null'); if(c&&c.date===dateLabel) sub=`${c.activos} activos${c.reserva?` · ${c.reserva} reserva`:''}`; }catch(_){}
     // §4 — amber the badge when this hub's latest order isn't today's (coordinator didn't upload for it today)
     const stale = loaded && dateLabel !== todayStr();
     const badgeCls = !loaded ? 'empty' : (stale ? 'stale' : 'loaded');
-    return `<div class="coord-hub-row">
-      <span class="coord-hub-name">${escH(hub)}${sub?`<span class="coord-hub-sub">${escH(sub)}</span>`:''}</span>
-      <span class="coord-hub-badge ${badgeCls}" id="badge-${HUB_SLUG[hub]}">${loaded?`${stale?'⚠':'✓'} ${escH(dateLabel)}${lo.r2?' · 🔄 R2':''}`:'Sin pedido'}</span>
-      <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
-      ${noSurtidoBtn}${recoverBtn}${clearBtn}
+    const badge=`<span class="coord-hub-badge ${badgeCls}" id="badge-${HUB_SLUG[hub]}">${loaded?`${stale?'⚠':'✓'} Pedido ${escH(ddmm(dateLabel))}${lo.r2?' · 🔄 R2':''}`:'Sin pedido'}</span>`;
+    const detail=pendingSt ? 'Cargando estado…' : (statusError ? '⚠ No se pudo calcular el estado' : statusDetailText(status));
+    return `<div class="hub-card" id="hubcard-${HUB_SLUG[hub]}">
+      <div class="hub-card-top"><span class="hub-card-name">${escH(hub)}</span>${loaded?(pendingSt?'<span class="st-chip st-pend">…</span>':statusChipHtml(status)):''}</div>
+      <div class="hub-card-meta">${badge}${sub?`<span>${escH(sub)}</span>`:''}</div>
+      ${detail?`<div class="hub-card-detail">${escH(detail)}</div>`:''}
+      <div class="hub-card-actions">
+        <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
+        ${noSurtidoBtn}${recoverBtn}${clearBtn}
+      </div>
     </div>`;
   }).join('');
 }
@@ -1869,7 +2057,7 @@ async function downloadRemoteReport(path, filename){
 }
 
 async function sbDelete(path){
-  const r=await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`,{
+  const r=await sbReq(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`,{
     method:'DELETE',
     headers:{'Authorization':`Bearer ${SB_KEY}`}
   });
@@ -4224,8 +4412,9 @@ function isPartialNotFoundErr(e){ return /^(400|404)$/.test(String(e&&e.message|
 // file). Returns {found:true, partial} / {found:false}, or throws when the state couldn't be
 // confirmed either way (closes D13's "corrupt write looks like no partial" for the versioned case,
 // since an unreadable newest version falls back to the next-older one).
-async function fetchRemotePartial(hub, orderDate){
-  const files=(await sbList(`partials/${HUB_SLUG[hub]}/`))
+// knownFiles: the hub's partials/ listing when the caller already has it (saves a request per lookup)
+async function fetchRemotePartial(hub, orderDate, knownFiles){
+  const files=(knownFiles||await sbList(`partials/${HUB_SLUG[hub]}/`))
     .filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json'))
     .sort((a,b)=>b.name.localeCompare(a.name));
   let sawUnreadable=false;
@@ -4363,12 +4552,10 @@ async function sweepLeftoverPartials(hub, partialFiles, reportFiles){
   const ods=new Set(partialFiles.filter(f=>f.name&&f.name.endsWith('.json'))
     .map(f=>f.name.includes('__')?f.name.split('__')[0]:f.name.replace(/\.json$/,'')));
   for(const od of ods){
-    const r2=/-r2$/.test(od), bare=bareOrderDate(od);
-    const reps=reportFiles.filter(f=>f.name.startsWith(bare) && /_r2_/.test(f.name)===r2);
-    if(!reps.length) continue;
-    const repEp=Math.max(...reps.map(f=>reportFinishEpoch(f.name)).filter(n=>!isNaN(n)));
-    if(!isFinite(repEp)) continue;
-    let p=null; try{ p=(await fetchRemotePartial(hub, od)).partial||null; }catch(_){ continue; } // unreadable → leave it
+    const reps=await reportsForOrder(hub, od, reportFiles);
+    if(!reps.length || !reps[0].ep) continue;
+    const repEp=reps[0].ep;
+    let p=null; try{ p=(await fetchRemotePartial(hub, od, partialFiles)).partial||null; }catch(_){ continue; } // unreadable → leave it
     if(!p) continue;
     const lastConfirm=Math.max(0, ...(p.results||[]).map(r=>Date.parse(r&&r.confirmedAt)||0));
     if(lastConfirm>repEp+60000) continue; // real work after the report — not a leftover
@@ -4555,6 +4742,25 @@ async function checkForPartialSave(){
     maybeShowRecoveryCard(hub, orderDate, S.ronda).catch(()=>{}); // v2.2/F5 — offer to rebuild from picks, never silently
     return;
   }
+  // v2.3 — never offer "Continuar" for an order that was already finished. Contry's 13/10 and 08/10 were resumed
+  // hours after their reports from a copy holding only pre-report work; resuming re-saved it and brought it back.
+  // If a report exists and the partial has nothing confirmed after it, say so and archive the leftover.
+  try{
+    const mine=await reportsForOrder(hub, orderDate, (await sbList(`reports/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')));
+    const pi=partialInfo(partial);
+    if(mine.length && mine[0].ep && pi.lastConfirm<=mine[0].ep+60000){
+      if(S.hub!==hub||S.orderDate!==orderDate) return;
+      S._partialCheck='none'; _partialCheckRetried=false; _pendingPartial=null; updateStartBtn();
+      notice.innerHTML=`<div class="partial-notice" style="background:var(--green-light);border-color:var(--green)">
+        <div class="partial-notice-title" style="color:var(--green-dark)">✅ Este pedido ya se terminó</div>
+        <div class="partial-notice-sub" style="color:var(--green-dark);margin-bottom:0">Reporte de las ${escH(reportDisplayInfo(mine[0].name).label)}. No hay avance pendiente.</div>
+      </div>`;
+      notice.style.display='block';
+      clearPartialSave(hub, orderDate, 'leftover_after_report', pi.done, pi.total, {payload:partial}); // archive-first
+      return;
+    }
+  }catch(_){ /* reports unreachable — fall through to the normal resume card */ }
+  if(S.hub!==hub||S.orderDate!==orderDate) return;
   S._partialCheck='found'; _partialCheckRetried=false;
   _pendingPartial=partial; _pendingPartialOtherDevice=!!fromOtherDevice;
   updateStartBtn(); // disables Iniciar Armado while partial is pending

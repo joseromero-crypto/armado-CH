@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p2b')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p3')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -86,6 +86,7 @@ Raw `fetch` calls, no supabase-js. Helpers (all near the top of the script):
 | `sbList(prefix)` | `POST …/object/list/{bucket}`, limit 500, name desc | |
 | `sbDelete(path)` | `DELETE …/object/{bucket}/{path}` (single-object endpoint) | The batch prefixes endpoint does not work for exact paths |
 | `pgInsert(table,row)` / `pgSelect(table,query)` | PostgREST `/rest/v1/{table}` | **Max rows = 1000** per response |
+| `sbReq(url,opts)` | every helper above/below goes through it: **max 8 requests in flight**, and a **429** waits (Retry-After or 0.5/1/2/4 s) and retries up to 4 times | v2.3 — unthrottled bursts got rate-limited and hubs rendered empty |
 | `pgSelectAll(table,query)` | pages `pgSelect` (`limit`/`offset`, adds `order=id.asc` if none) | Use for anything day-wide (v2.3) |
 | `sbReplace(path,body,type,{backup})` | upsert; on a 4xx delete-then-insert. `backup` keeps a respaldo of the old file first | For paths that may already exist (v2.3) |
 | `latestOrderFile(files)` | `{date, base, r2, chosen}` — THE rule for a hub's current order | Every caller uses it (v2.3) |
@@ -170,6 +171,7 @@ All access is wrapped in try/catch. Writes that matter go through `trySetLocalSt
 | `calii_registro_ticks_{reportPath}` | ticked rows in the registration copilot | forever |
 | `calii_sum_sort` | summary-screen sort preference | forever |
 | `calii_coord_page` | last coordinator page (v2.3) | forever |
+| `calii_coord_maint` | day the coordinator maintenance (sweep + respaldo pruning) last ran on this device | overwritten daily |
 
 ---
 
@@ -238,6 +240,9 @@ Coordinador (PIN) · Armar Pedido · 📖 Manual · `⏳ N pendiente(s) de envia
      armadores and date). Shows `Continuado en otro dispositivo a las HH:MM` when the winning copy came from
      another device.
    - **🛟 Recuperar armado** — no partial found, but picks exist and no report → rebuild from picks.
+   - **✅ Este pedido ya se terminó** (v2.3) — a partial was found, but the order already has a report
+     (`reportsForOrder`) and nothing in the partial was confirmed after it. No "Continuar" is offered, and the
+     leftover is archived + deleted (`leftover_after_report`). This is what stops finished orders being resumed.
    - nothing.
 5. **Iniciar Armado** is enabled only when: hub + order loaded, a name is picked (if any are configured),
    the stale modal was acknowledged (`_staleAck`), and `_partialCheck` is `'none'` with no pending
@@ -281,13 +286,20 @@ Reached from **Finalizar pedido** (`showSummary`, mode `'live'`) or from 📋 Pe
 - `showCoordPage(name)` shows one page, saves it to `calii_coord_page`, and loads that page's data.
 - `loadCoordinatorScreen()` = drop cached data + flush the outbox + reload the **current** page. Called by ↺, PIN
   entry, the Métricas/Registro `←`, and after every upload/delete — so those keep the page you were on.
-- `getCoordHubData()` fetches each hub's `orders/` + `reports/` + `partials/` lists once (`fetchCoordHubData`) and
-  shares them between Pedidos and Armados until the next `loadCoordinatorScreen()`. It also kicks off the
-  once-per-session leftover sweep and respaldo pruning (§8.2).
+- **Two-stage load.** `getCoordHubData()` = stage 1, each hub's `orders/` + `reports/` + `partials/` lists
+  (`fetchCoordHubData`, 21 requests) — enough to draw the Pedidos cards and all of Armados, shared until the next
+  `loadCoordinatorScreen()`. `getCoordStatuses()` = stage 2 (`computeCoordStatuses`): status per hub, older
+  unfinished orders, `pedido_completo` lists and the morning banner. Pedidos draws cards after stage 1 (chips `…`,
+  "Cargando estado…") and redraws after stage 2; Armados never waits for stage 2. Measured 2026-10-20: cards 0.8 s,
+  statuses 1.4 s cold / 1.0 s warm.
+- A failed load shows `⚠ No se pudo cargar … Reintentar` (`coordLoadFailed`) — per page, or per hub card.
+- `runCoordMaintenance` (leftover sweep + respaldo pruning, §8.2) runs **once a day per device**
+  (`calii_coord_maint`), hub by hub, after stage 2 — never during the page load. Skipped when localStorage is
+  unavailable (e.g. a `file://` tab).
 
 | Menu | Page id | Content | Loader |
 |---|---|---|---|
-| 📦 Pedidos | `pedidos` | per hub card: name + `N activos · M reserva`, date badge (amber `⚠` if not today, `· 🔄 R2`), `Subir CSV`, `📄 No surtido`, `🛟 Recuperar` (latest order has picks, no partial, no report), `🗑` (`🗑 R1`/`🗑 R2` with a complemento). Cards wrap to two lines on a phone | `renderPedidosPage` |
+| 📦 Pedidos | `pedidos` | **Morning banner** (v2.3/B2): the newest order date before today from `pedido_completo/` (order CSVs are deleted daily), `N de M armados · K sin terminar`, a chip per unfinished hub that scrolls to its card. **Hub cards** (v2.3/B1): name + status chip (`⚪ Pendiente` · `🟡 En progreso N/M` · `🟡 Continuado después del reporte` · `✅ Armado N/M` / `con pendientes` · `🔴 Se perdió el avance`), `✓ Pedido dd/mm` badge (amber if not today, `· 🔄 R2`) + `N activos · M reserva`, who/when line, then `Subir CSV`, `📄 No surtido`, `🛟 Recuperar` (status = perdido), `🗑` / `🗑 R1`·`🗑 R2` | `renderMorningBanner`, `renderPedidosPage` |
 | ✅ Armados | `armados` | `Hoy` = reports for the currently loaded orders (filename date ≥ the hub's order date) · `Historial` = everything older, dimmed, with hub + 7/30/90/todo filters (default 30). Both are **grouped by order date** (`renderReportGroups`): one collapsible block per day headed `Lunes 19 oct 2026 · ayer` with `N armados · M complementos`; inside, by hub, R2 indented under R1. Newest 3 days open in Historial. Each row: time — armador (+ `· terminado dd/mm` when finished on a later day), `📋` registro, `⬇ CSV`, `🗑`. Legacy one-date reports group under their finish date | `renderArmadosPage`, `renderArchive`, `setArchFilter`, `setArmadosView` |
 | ☑️ Verificar captura | `verificar` | placeholder until v2.3 Part F | — |
 | 📭 Faltantes | `faltantes` | `📭 Faltantes del día (CSV)` + ⚠️ conflicts (`Inv > 0` and demand across hubs > Inv), 📭 today's faltantes (desmentido markers), 📜 last 20 `partial_events` | `loadInvToday` |
@@ -389,6 +401,21 @@ older than `RESPALDO_DAYS` (30) once per hub per session.
   the newest version, and after 3 saves the old versions are pruned.
 - When the 🛟 card is showing, `Iniciar Armado` is **enabled**. Starting fresh writes a new partial, and
   recovery is then never offered again for that order (it is only offered when no partial exists).
+
+### 8.2b Order status (v2.3 Phase 3)
+`orderStatus(hub, od, partialFiles, reportFiles)` — used by the Pedidos cards and the morning banner:
+1. `reportsForOrder(hub, od, reportFiles)` — reports whose name starts with the order date; for pre-v2.3
+   one-date names, legacy reports finished within 21 days whose **metrics sidecar `orderDate`** matches
+   (sidecars cached via `cachedMetrics` in `calii_metrics_cache`). The same lookup feeds the resume guard and
+   the leftover sweep, so they always agree on "is this order finished?".
+2. Report found → **✅ armado** with N/M from its sidecar (`skusArmados/skusTotal`) — **unless** a partial for the
+   same order has a product confirmed after the report time → **🟡 continuado**.
+3. No report, partial found → **🟡 progreso** (done/total/armadores/savedAt from the newest version).
+4. Neither → one `limit=1` picks query: picks → **🔴 perdido** (🛟 offered), else **⚪ pendiente**.
+
+**Status is only about the hub's current order** (Jose, 2026-10-20). Older orders are not looked up or shown on
+the cards; the morning banner covers yesterday. (An earlier build listed older unfinished partials in red —
+Contry 14/09-r2 at 1/7, Cumbres 01/10 at 1/56 — and was removed as noise.)
 
 ### 8.3 Recovery from picks (🛟)
 `rebuildPartialFromPicks(hub, orderDate, ronda)`:
@@ -626,11 +653,18 @@ Found while reading the code on 2026-10-20. None fixed yet.
     but were **saved hours after** the report: the 13/10 one shows a new segment by "Rangel" at 15:56. Someone
     resumed an already-finished order — a stale local or remote copy offered the "Continuar" card — and
     `resumePartialSave` re-saved it at once. The sweep now archives these (judged on last `confirmedAt`).
-    **Root cause still open:** `checkForPartialSave` doesn't check whether the order already has a report, so
-    an assembler can still resume a finished order until the coordinator screen sweeps it (v2.3 plan Phase 3).
+    **Fixed (v2.3 Phase 3):** `checkForPartialSave` now asks `reportsForOrder` first and, for a finished order with no
+    later work, shows "✅ Este pedido ya se terminó" instead of "Continuar" and archives the leftover.
     The 14/09-r2 partial is different: a complemento with no R2 report — genuinely unfinished.
 11e. Re-upload overwrite (item 11) is still unverified: no order file shows `updated_at > created_at`, so no
     same-day overwrite has ever succeeded — or none was tried.
+
+**Testing incident (2026-10-20)**
+11f. During v2.3 testing the editor auto-opened `index.html` as a `file://` tab in the browser pane, which runs the
+    local code against production with no write stub. The coordinator was opened in it and the Phase 1 sweep really
+    archived + deleted Contry's 13/10 and 08/10 leftover partials. Both are preserved in `respaldos/mh-contry/`
+    (`…__terminado.json`, 151/174 and 96/130, all work pre-dating their reports). Lesson: test only in the
+    stubbed `http://localhost:8080` tab and close any `file://` tab after edits.
 
 **Docs**
 12. `manual/manual-armado-ch.md` predates v2.2: it still says "Nuevo armado" (now "Empezar de cero" with a
