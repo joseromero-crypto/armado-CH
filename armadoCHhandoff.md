@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p1')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p2')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -169,6 +169,7 @@ All access is wrapped in try/catch. Writes that matter go through `trySetLocalSt
 | `calii_ordercount_{slug}` | `{date, activos, reserva}` from this device's last upload | coordinator display only |
 | `calii_registro_ticks_{reportPath}` | ticked rows in the registration copilot | forever |
 | `calii_sum_sort` | summary-screen sort preference | forever |
+| `calii_coord_page` | last coordinator page (v2.3) | forever |
 
 ---
 
@@ -274,18 +275,25 @@ Reached from **Finalizar pedido** (`showSummary`, mode `'live'`) or from 📋 Pe
   Reintentar / `Salir (reporte pendiente)` (`exitKeepingPartial`).
 
 ### 7.5 Coordinator (PIN from `coordinator_pin.txt`, cached for the session)
-Header: `←` · 📊 metrics · ↺ reload. Sections, top to bottom:
-1. **Cargar pedidos** — per hub: name + `N activos · M reserva`, date badge (amber `⚠` if not today),
-   `Subir CSV`, `📄 No surtido`, `🛟 Recuperar` (when the latest order has picks but no partial and no
-   report), `🗑` delete order.
-2. **Inventario — hoy** (collapsible): ⚠️ conflicts (`Inv > 0` and total demand across hubs > Inv),
-   📭 today's faltantes (with desmentido markers), 📜 last 20 `partial_events`. Plus `📭 Faltantes del día (CSV)`.
-3. **🔄 Inventario de cierre** — upload Retool's inventory export; `Revisar` → per-hub candidates →
-   `Generar complemento` / `Generar todos` (§9.7).
-4. **🖼 Base de imágenes** — upload the Masterview export (§9.10).
-5. **Armadores** — add / remove names.
-6. **Reportes activos** (reports dated ≥ the hub's latest order date) with `📋` registro, `⬇ CSV`, `🗑`.
-   R2 reports indented under R1. **📁 Ver historial** — everything older, dimmed.
+**Pages under a sticky top menu (v2.3 Phase 2)** — one `<section class="coord-page">` visible at a time inside
+`screen-coordinator`. Header: `←` · 📊 metrics · ↺ reload, then the menu (scrolls sideways on a phone).
+
+- `showCoordPage(name)` shows one page, saves it to `calii_coord_page`, and loads that page's data.
+- `loadCoordinatorScreen()` = drop cached data + flush the outbox + reload the **current** page. Called by ↺, PIN
+  entry, the Métricas/Registro `←`, and after every upload/delete — so those keep the page you were on.
+- `getCoordHubData()` fetches each hub's `orders/` + `reports/` + `partials/` lists once (`fetchCoordHubData`) and
+  shares them between Pedidos and Armados until the next `loadCoordinatorScreen()`. It also kicks off the
+  once-per-session leftover sweep and respaldo pruning (§8.2).
+
+| Menu | Page id | Content | Loader |
+|---|---|---|---|
+| 📦 Pedidos | `pedidos` | per hub card: name + `N activos · M reserva`, date badge (amber `⚠` if not today, `· 🔄 R2`), `Subir CSV`, `📄 No surtido`, `🛟 Recuperar` (latest order has picks, no partial, no report), `🗑` (`🗑 R1`/`🗑 R2` with a complemento). Cards wrap to two lines on a phone | `renderPedidosPage` |
+| ✅ Armados | `armados` | `Hoy` = reports for the currently loaded orders (filename date ≥ the hub's order date), R2 indented under R1 · `Historial` = everything older, dimmed. Each: `📋` registro, `⬇ CSV`, `🗑` | `renderArmadosPage`, `setArmadosView` |
+| ☑️ Verificar captura | `verificar` | placeholder until v2.3 Part F | — |
+| 📭 Faltantes | `faltantes` | `📭 Faltantes del día (CSV)` + ⚠️ conflicts (`Inv > 0` and demand across hubs > Inv), 📭 today's faltantes (desmentido markers), 📜 last 20 `partial_events` | `loadInvToday` |
+| 🔄 Cierre | `cierre` | closing-inventory upload, `Revisar` → candidates → `Generar complemento` / `Generar todos` (§9.7) | `refreshCierreStatus` |
+| 👤 Armadores | `armadores` | add / remove names | `loadAssemblers` + `renderAssemblerList` |
+| 🖼 Imágenes | `imagenes` | Masterview upload (§9.10) | `refreshImgDbStatus` |
 
 ### 7.6 Metrics, Registro, Manual
 - **📊 Métricas** — one row per sidecar; filters (armador, hub, 7/30/90/todo, solo irregulares), sortable

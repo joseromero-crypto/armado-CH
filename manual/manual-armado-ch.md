@@ -297,6 +297,19 @@ Los productos pendientes nunca se mueven de lugar. Solo se agrupan los ya resuel
 
 Toca **Coordinador** e ingresa el PIN de 4 dígitos. Se pide una vez por sesión.
 
+Arriba hay un menú con las secciones. Toca una para abrirla; en el teléfono el menú se desliza hacia los lados.
+La app recuerda la última sección que usaste.
+
+| Menú | Qué hay |
+|---|---|
+| 📦 **Pedidos** | Subir el pedido de cada hub, 📄 No surtido, borrar pedidos |
+| ✅ **Armados** | Reportes terminados: *Hoy* y *Historial* |
+| ☑️ **Verificar captura** | Próximamente: comparar lo capturado en Retool contra lo armado |
+| 📭 **Faltantes** | Conflictos de inventario, faltantes de hoy y el CSV del día |
+| 🔄 **Cierre** | Inventario de cierre y complementos |
+| 👤 **Armadores** | La lista de nombres |
+| 🖼 **Imágenes** | Base de imágenes |
+
 ### Cargar pedidos
 
 Una fila por hub. Cada una muestra la última carga o `Sin pedido`.
@@ -330,10 +343,10 @@ Escribe el nombre y toca `+` o Enter. El `✕` lo quita.
 Esta lista es la que ve el armador al elegir su nombre, y es lo que hace que las métricas sean atribuibles.
 **Sin nombres configurados, no hay métricas por persona.**
 
-### Reportes
+### Reportes (✅ Armados)
 
-- **Activos** — los generados desde la última carga de ese hub.
-- **📁 Ver historial** — todos los anteriores, en gris.
+- **Hoy** — los generados desde la última carga de cada hub.
+- **Historial** — todos los anteriores, en gris.
 
 Cada uno: `10:42 — Diego` con `⬇` descargar, `📋` copiloto de registro, `🗑` borrar.
 

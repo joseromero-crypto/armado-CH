@@ -103,6 +103,18 @@
     .coord-empty{font-size:13px;color:var(--gray-500);padding:8px 0}
     .archive-toggle{background:none;border:none;color:var(--green);font-size:13px;font-weight:700;cursor:pointer;padding:10px 0;text-decoration:underline;display:block;margin:0 auto}
 
+    /* v2.3/A — coordinator top menu. Header + menu stick together; the menu scrolls sideways on a phone. */
+    .coord-top{position:sticky;top:0;z-index:20;background:white;box-shadow:var(--shadow-sm)}
+    .coord-nav{display:flex;gap:6px;overflow-x:auto;padding:0 12px 10px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .coord-nav::-webkit-scrollbar{display:none}
+    .coord-nav button{flex:none;padding:7px 13px;border-radius:20px;border:1.5px solid var(--gray-300);background:white;color:var(--gray-600);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+    .coord-nav button.active{background:var(--green);border-color:var(--green);color:white}
+    .coord-page-note{font-size:12px;color:var(--gray-500);margin:0 0 10px}
+    /* hub card: name on its own line, badge + actions beneath — on a phone the single row squeezed the name to "M C" */
+    #coord-hub-list .coord-hub-row{flex-wrap:wrap;row-gap:8px}
+    #coord-hub-list .coord-hub-name{flex:1 1 100%}
+    #coord-hub-list .coord-hub-badge{margin-right:auto}
+
     /* METRICS (coordinator) */
     .metrics-body{padding:14px 12px 60px;max-width:900px;margin:0 auto;width:100%}
     .metrics-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
@@ -463,59 +475,91 @@
   </div>
 </div>
 
-<!-- COORDINATOR -->
+<!-- COORDINATOR — v2.3/A: one page at a time under a sticky top menu (was one long scroll) -->
 <div id="screen-coordinator" class="screen">
-  <div class="coord-header">
-    <button class="back-text-btn" onclick="showScreen('home')">←</button>
-    <h2>Coordinador</h2>
-    <button class="back-text-btn" onclick="openMetrics()" title="Métricas de armado">📊</button>
-    <button class="back-text-btn" onclick="loadCoordinatorScreen()" title="Actualizar">↺</button>
+  <div class="coord-top">
+    <div class="coord-header" style="position:static;box-shadow:none">
+      <button class="back-text-btn" onclick="showScreen('home')">←</button>
+      <h2>Coordinador</h2>
+      <button class="back-text-btn" onclick="openMetrics()" title="Métricas de armado">📊</button>
+      <button class="back-text-btn" onclick="loadCoordinatorScreen()" title="Actualizar">↺</button>
+    </div>
+    <nav class="coord-nav" id="coord-nav">
+      <button data-p="pedidos" onclick="showCoordPage('pedidos')">📦 Pedidos</button>
+      <button data-p="armados" onclick="showCoordPage('armados')">✅ Armados</button>
+      <button data-p="verificar" onclick="showCoordPage('verificar')">☑️ Verificar captura</button>
+      <button data-p="faltantes" onclick="showCoordPage('faltantes')">📭 Faltantes</button>
+      <button data-p="cierre" onclick="showCoordPage('cierre')">🔄 Cierre</button>
+      <button data-p="armadores" onclick="showCoordPage('armadores')">👤 Armadores</button>
+      <button data-p="imagenes" onclick="showCoordPage('imagenes')">🖼 Imágenes</button>
+    </nav>
   </div>
   <div class="coord-body">
-    <div class="coord-section-title" style="margin-top:0">Cargar pedidos</div>
-    <div id="coord-hub-list"></div>
+    <section class="coord-page" id="coord-page-pedidos">
+      <div class="coord-section-title" style="margin-top:0">Cargar pedidos</div>
+      <div id="coord-hub-list"></div>
+    </section>
 
-    <div class="coord-section-title" style="margin-top:28px">Inventario — hoy</div>
-    <button class="archive-toggle" id="invtoday-toggle" onclick="toggleInvToday()" style="text-align:left;margin:0">⚠️ Ver conflictos y faltantes de hoy</button>
-    <button class="btn btn-outline" style="margin-top:8px;padding:10px 14px;font-size:13px" onclick="downloadFaltantesDelDia()">📭 Faltantes del día (CSV)</button>
-    <div id="invtoday-body" style="display:none;margin-top:10px"></div>
-
-    <div class="coord-section-title" style="margin-top:28px">🔄 Inventario de cierre</div>
-    <div class="cierre-box">
-      <div class="cierre-row">
-        <label class="coord-upload-btn">Subir registro de inventario<input type="file" accept=".csv" onchange="uploadCierre(this)"></label>
-        <span id="cierre-status" class="cierre-status">Sin cargar</span>
+    <section class="coord-page" id="coord-page-armados" style="display:none">
+      <div class="coord-section-title" style="margin-top:0">Armados terminados</div>
+      <div class="list-filter-seg" id="armados-seg" style="margin:0 0 12px">
+        <button data-v="hoy" class="active" onclick="setArmadosView('hoy')">Hoy</button>
+        <button data-v="historial" onclick="setArmadosView('historial')">Historial</button>
       </div>
-      <button class="btn btn-outline" style="margin-top:10px;padding:12px" onclick="revisarCierre()">Revisar inventario nuevo vs pendientes</button>
-      <div id="cierre-result" style="margin-top:12px"></div>
-    </div>
-
-    <div class="coord-section-title" style="margin-top:28px">🖼 Base de imágenes</div>
-    <div class="cierre-box">
-      <div class="cierre-row">
-        <label class="coord-upload-btn">Subir exportación Masterview<input type="file" accept=".csv" onchange="uploadImageDB(this)"></label>
-        <span id="imgdb-status" class="cierre-status">—</span>
+      <div id="armados-hoy">
+        <div class="coord-page-note">Reportes de los pedidos cargados ahora.</div>
+        <div id="coord-reports"></div>
       </div>
-      <div class="cierre-status" style="margin-top:8px;font-weight:400">Semanal, o cuando se reporte un problema de imagen o de código. No hace falta a diario.</div>
-    </div>
-
-    <div class="coord-section-title" style="margin-top:28px">Armadores</div>
-    <div class="assembler-mgr-box">
-      <div id="assembler-list-items"><div class="coord-empty">Cargando…</div></div>
-      <div class="assembler-add-row">
-        <input id="new-assembler-input" class="assembler-text-input" type="text" placeholder="Nombre del armador" maxlength="40" onkeydown="if(event.key==='Enter')addAssembler()">
-        <button class="assembler-add-btn" onclick="addAssembler()" title="Agregar armador">+</button>
+      <div id="armados-historial" style="display:none">
+        <div class="coord-page-note">Reportes de pedidos anteriores.</div>
+        <div id="coord-archive-list"><div class="coord-empty">Cargando historial…</div></div>
       </div>
-    </div>
-    <div class="coord-section-title" style="margin-top:28px">Reportes activos</div>
-    <div id="coord-reports"></div>
-    <div style="margin-top:20px;text-align:center">
-      <button class="archive-toggle" id="archive-toggle" onclick="toggleArchive()">📁 Ver historial de reportes</button>
-    </div>
-    <div id="coord-archive" style="display:none">
-      <div class="coord-section-title" style="margin-top:16px">Historial de reportes anteriores</div>
-      <div id="coord-archive-list"><div class="coord-empty">Cargando historial…</div></div>
-    </div>
+    </section>
+
+    <section class="coord-page" id="coord-page-verificar" style="display:none">
+      <div class="coord-section-title" style="margin-top:0">Verificar captura</div>
+      <div class="cierre-box"><div class="cierre-status" style="font-weight:400;line-height:1.5">Próximamente: sube la exportación de Retool de un hub y la app la compara contra lo armado — cantidades capturadas distintas, renglones sin capturar y posibles errores de armado.</div></div>
+    </section>
+
+    <section class="coord-page" id="coord-page-faltantes" style="display:none">
+      <div class="coord-section-title" style="margin-top:0">Faltantes armador — hoy</div>
+      <button class="btn btn-outline" style="padding:10px 14px;font-size:13px" onclick="downloadFaltantesDelDia()">📭 Faltantes del día (CSV)</button>
+      <div id="invtoday-body" style="margin-top:12px"></div>
+    </section>
+
+    <section class="coord-page" id="coord-page-cierre" style="display:none">
+      <div class="coord-section-title" style="margin-top:0">🔄 Inventario de cierre</div>
+      <div class="cierre-box">
+        <div class="cierre-row">
+          <label class="coord-upload-btn">Subir registro de inventario<input type="file" accept=".csv" onchange="uploadCierre(this)"></label>
+          <span id="cierre-status" class="cierre-status">Sin cargar</span>
+        </div>
+        <button class="btn btn-outline" style="margin-top:10px;padding:12px" onclick="revisarCierre()">Revisar inventario nuevo vs pendientes</button>
+        <div id="cierre-result" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <section class="coord-page" id="coord-page-armadores" style="display:none">
+      <div class="coord-section-title" style="margin-top:0">Armadores</div>
+      <div class="assembler-mgr-box">
+        <div id="assembler-list-items"><div class="coord-empty">Cargando…</div></div>
+        <div class="assembler-add-row">
+          <input id="new-assembler-input" class="assembler-text-input" type="text" placeholder="Nombre del armador" maxlength="40" onkeydown="if(event.key==='Enter')addAssembler()">
+          <button class="assembler-add-btn" onclick="addAssembler()" title="Agregar armador">+</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="coord-page" id="coord-page-imagenes" style="display:none">
+      <div class="coord-section-title" style="margin-top:0">🖼 Base de imágenes</div>
+      <div class="cierre-box">
+        <div class="cierre-row">
+          <label class="coord-upload-btn">Subir exportación Masterview<input type="file" accept=".csv" onchange="uploadImageDB(this)"></label>
+          <span id="imgdb-status" class="cierre-status">—</span>
+        </div>
+        <div class="cierre-status" style="margin-top:8px;font-weight:400">Semanal, o cuando se reporte un problema de imagen o de código. No hace falta a diario.</div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -1441,24 +1485,50 @@ async function finishOrderLoad(hub){
 }
 
 /* ── COORDINATOR ── */
-async function loadCoordinatorScreen(){
-  document.getElementById('coord-hub-list').innerHTML='<div class="coord-empty">Verificando…</div>';
-  document.getElementById('coord-reports').innerHTML='<div class="coord-empty">Cargando reportes…</div>';
-  document.getElementById('coord-archive').style.display='none';
-  document.getElementById('archive-toggle').textContent='📁 Ver historial de reportes';
+/* ── v2.3/A — COORDINATOR PAGES ──
+   One page visible at a time under the top menu. Each page loads its own data when opened; the per-hub lists
+   (orders, reports, partials) are fetched once and shared by Pedidos and Armados until the next reload. */
+const COORD_PAGES=['pedidos','armados','verificar','faltantes','cierre','armadores','imagenes'];
+let _coordPage='pedidos';
+try{ const p=localStorage.getItem('calii_coord_page'); if(COORD_PAGES.includes(p)) _coordPage=p; }catch(_){}
+let _coordHubData=null, _coordHubDataP=null, _armadosView='hoy';
+// ↺, PIN entry, and every action that changes the bucket call this: drop cached data, reload the open page.
+function loadCoordinatorScreen(){
+  _coordHubData=null; _coordHubDataP=null; _cierreCache=null;
   S._archiveLoaded=false; S._archiveData=[];
-  _cierreCache=null;
   document.getElementById('cierre-result').innerHTML='';
-  refreshCierreStatus();
-  refreshImgDbStatus();
   flushOutbox(); // §3.6 — a good moment to drain any queued uploads
-
-  // Load assembler list
-  await loadAssemblers();
-  renderAssemblerList();
-
-  // Fetch order status + reports for all hubs in parallel
-  const hubData=await Promise.all(HUBS.map(async hub=>{
+  return showCoordPage(_coordPage);
+}
+async function showCoordPage(name){
+  if(!COORD_PAGES.includes(name)) name='pedidos';
+  _coordPage=name;
+  try{ localStorage.setItem('calii_coord_page', name); }catch(_){}
+  document.querySelectorAll('#coord-nav button').forEach(b=>{
+    const on=b.dataset.p===name; b.classList.toggle('active', on);
+    if(on) b.scrollIntoView({block:'nearest', inline:'nearest'});
+  });
+  document.querySelectorAll('.coord-page').forEach(sec=>{ sec.style.display = sec.id==='coord-page-'+name ? 'block' : 'none'; });
+  window.scrollTo(0,0);
+  if(name==='pedidos'){
+    if(!_coordHubData) document.getElementById('coord-hub-list').innerHTML='<div class="coord-empty">Verificando…</div>';
+    renderPedidosPage(await getCoordHubData());
+  } else if(name==='armados'){
+    if(!_coordHubData) document.getElementById('coord-reports').innerHTML='<div class="coord-empty">Cargando reportes…</div>';
+    renderArmadosPage(await getCoordHubData());
+  } else if(name==='faltantes') loadInvToday();
+  else if(name==='cierre') refreshCierreStatus();
+  else if(name==='armadores'){ await loadAssemblers(); renderAssemblerList(); }
+  else if(name==='imagenes') refreshImgDbStatus();
+}
+function getCoordHubData(){
+  if(_coordHubData) return Promise.resolve(_coordHubData);
+  if(!_coordHubDataP) _coordHubDataP=fetchCoordHubData().then(d=>{ _coordHubData=d; return d; });
+  return _coordHubDataP;
+}
+// Order status + reports + partials for all hubs, in parallel
+function fetchCoordHubData(){
+  return Promise.all(HUBS.map(async hub=>{
     try{
       const [orderFiles, reportFiles, partialFiles]=await Promise.all([
         sbList(`orders/${HUB_SLUG[hub]}/`),
@@ -1491,8 +1561,9 @@ async function loadCoordinatorScreen(){
       return {hub, lo, latestOrder, cutoffDate, currentOd, activeReports, archiveReports, canRecover, recoverRonda};
     }catch(e){ return {hub, lo:null, latestOrder:null, cutoffDate:null, currentOd:null, activeReports:[], archiveReports:[], canRecover:false, recoverRonda:1}; }
   }));
+}
 
-  // Render hub rows
+function renderPedidosPage(hubData){
   document.getElementById('coord-hub-list').innerHTML=hubData.map(({hub,lo,cutoffDate,currentOd,canRecover,recoverRonda})=>{
     const loaded=!!lo;
     const dateLabel=cutoffDate||'';
@@ -1514,7 +1585,9 @@ async function loadCoordinatorScreen(){
       ${noSurtidoBtn}${recoverBtn}${clearBtn}
     </div>`;
   }).join('');
+}
 
+function renderArmadosPage(hubData){
   // Render active reports — round-2 reports sit indented under their round-1 sibling (same hub + date)
   const allActive=hubData.flatMap(({hub,activeReports})=>
     activeReports.map(f=>({hub, path:`reports/${HUB_SLUG[hub]}/${f.name}`, name:f.name}))
@@ -1549,6 +1622,15 @@ async function loadCoordinatorScreen(){
   S._archiveData=hubData.flatMap(({hub,archiveReports})=>
     archiveReports.map(f=>({hub, path:`reports/${HUB_SLUG[hub]}/${f.name}`, name:f.name}))
   ).sort((a,b)=>b.name.localeCompare(a.name));
+  S._archiveLoaded=false;
+  setArmadosView(_armadosView);
+}
+function setArmadosView(v){
+  _armadosView=(v==='historial')?'historial':'hoy';
+  document.querySelectorAll('#armados-seg button').forEach(b=>b.classList.toggle('active', b.dataset.v===_armadosView));
+  document.getElementById('armados-hoy').style.display=_armadosView==='hoy'?'block':'none';
+  document.getElementById('armados-historial').style.display=_armadosView==='historial'?'block':'none';
+  if(_armadosView==='historial' && !S._archiveLoaded){ renderArchive(); S._archiveLoaded=true; }
 }
 
 // dateStr = the ORDER date (first 10 chars, every format). finishDate = the day it was finished: the second date
@@ -1578,19 +1660,6 @@ function reportDisplayInfo(name){
   return {label:r2Tag+label+finTag, dateStr, finishDate, isR2};
 }
 
-let _archiveOpen=false;
-function toggleArchive(){
-  _archiveOpen=!_archiveOpen;
-  const archiveDiv=document.getElementById('coord-archive');
-  if(_archiveOpen){
-    archiveDiv.style.display='block';
-    document.getElementById('archive-toggle').textContent='📁 Ocultar historial';
-    if(!S._archiveLoaded){ renderArchive(); S._archiveLoaded=true; }
-  } else {
-    archiveDiv.style.display='none';
-    document.getElementById('archive-toggle').textContent='📁 Ver historial de reportes';
-  }
-}
 function renderArchive(){
   const arch=S._archiveData||[];
   if(!arch.length){
@@ -3348,15 +3417,6 @@ function scrollToRevisar(){
 }
 
 /* ── COORDINATOR: inventory conflicts + faltantes — hoy (§3.4) ── */
-let _invTodayOpen=false;
-function toggleInvToday(){
-  _invTodayOpen=!_invTodayOpen;
-  const body=document.getElementById('invtoday-body');
-  const btn=document.getElementById('invtoday-toggle');
-  body.style.display=_invTodayOpen?'block':'none';
-  btn.textContent=_invTodayOpen?'⚠️ Ocultar conflictos y faltantes' : '⚠️ Ver conflictos y faltantes de hoy';
-  if(_invTodayOpen) loadInvToday();
-}
 async function loadInvToday(){
   const body=document.getElementById('invtoday-body');
   body.innerHTML='<div class="coord-empty">Cargando…</div>';

@@ -432,7 +432,7 @@ With misclicks, rows read like:
 |---|---|---|
 | 0 | ~~V1–V3~~ done (§0) | |
 | 1 ✅ built 2026-10-20 (uncommitted) | **C1** respaldos before every delete (+ sweep resumed leftovers) · **D1** filenames · **D2** r2 helper · **D3** · **D4** `sbReplace` · **D4b** paging | Makes everything undoable, makes "is this finished?" answerable, stops the 1000-row truncation before daily picks pass it |
-| 2 | **A** coordinator pages | Frame for everything below; pure UI, low risk |
+| 2 ✅ built 2026-10-20 (uncommitted) | **A** coordinator pages | Frame for everything below; pure UI, low risk. Also: hub cards wrap to two lines on a phone (the name was squeezed to "M C"); the partial-events log stays on Faltantes until Respaldos exists (Phase 4) |
 | 3 | **B** status + morning banner + historial (needs C4 SQL) | |
 | 4 | **C2/C3/C5** Respaldos panel + upload stop for unfinished orders + Cerrar como terminado | |
 | 5 | **E** careful deletes | |
