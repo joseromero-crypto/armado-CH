@@ -573,16 +573,33 @@ Found while reading the code on 2026-10-20. None fixed yet.
 9. The coordinator screen sorts order files with `localeCompare`, which puts `2026-09-11.csv` **before**
    `2026-09-11-r2.csv`. So the coordinator treats the R1 file as "latest" while assemblers load the r2: the
    badge shows R1, **🗑 deletes the R1 order file** while the r2 stays, and 🛟 never targets ronda 2.
-10. **Verify:** picks rows with `ronda=2` in prod carry `order_date` **without** the `-r2` suffix
-    (e.g. `2026-09-11`), while `recordPick` sends `S.orderDate` (`…-r2`) and the rebuild/🛟 queries filter
-    on `…-r2`. If the column is `date`-typed, R2 recovery queries either error or match nothing. Check the
-    column type and a recent R2 pick before relying on R2 recovery.
+10. **Verified 2026-10-20:** `picks.order_date` is a `date` column. `recordPick` sends `S.orderDate`
+    (`2026-09-11-r2`); Postgres stores `2026-09-11`, and a query filtering on `…-r2` is coerced the same way and
+    matches. So R2 recovery works by accident; `ronda` is what actually separates R1 from R2 picks. Don't rely on
+    the coercion: send/query the bare date + `ronda`.
 
 **Overwrite-without-delete**
 11. **Verify:** `doUpload` (same hub, same day — both the order CSV and its `pedido_completo` JSON),
     `generarComplemento` (second run, same date) and `uploadCierre` (same day) use plain upsert over a path that may exist. With no anon UPDATE policy, that
     should fail with a 4xx. Either it fails today (re-upload is broken) or the bucket has an UPDATE policy
     that this file doesn't know about. Test once on a scratch hub.
+
+**Row limits**
+11b. **Verified 2026-10-20: max rows = 1000** (`picks` holds 22,256 rows; an unpaged query returns 0–999).
+    Daily picks across all hubs ran 442–870 in mid-October (870 on 20/10), so the cap is close. No `pgSelect`
+    paginates; day-wide queries will truncate silently: `loadPicks` (self-heals over a few polls, since each poll continues from the last
+    `ts`), the `cantidad=gt.0` "positives" queries behind desmentido detection and the faltantes CSV (do **not**
+    self-heal), and any future cross-hub query. Check *API settings → Max rows*.
+
+**How the bucket is actually used (observed 2026-10-20)**
+11c. **The coordinator deletes each day's order.** Every hub had exactly one file in `orders/` (today's); Condesa
+    and Zapopan had none. So order 🗑 is a daily routine, and anything needing an older order must read
+    `pedido_completo/` (Contry: 42 days kept), not `orders/`.
+11d. **Leftover partials for finished orders.** `partials/mh-contry/` still held files for 13/10, 08/10 and
+    14/09-r2 — orders that have reports. The fire-and-forget clear after a report doesn't always land (or a
+    save races it). Treat a report as final; leftovers are harmless today but confuse any "in progress" status.
+11e. Re-upload overwrite (item 11) is still unverified: no order file shows `updated_at > created_at`, so no
+    same-day overwrite has ever succeeded — or none was tried.
 
 **Docs**
 12. `manual/manual-armado-ch.md` predates v2.2: it still says "Nuevo armado" (now "Empezar de cero" with a
