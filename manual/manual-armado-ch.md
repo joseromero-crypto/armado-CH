@@ -310,7 +310,7 @@ La app recuerda la última sección que usaste.
 |---|---|
 | 📦 **Pedidos** | Subir el pedido de cada hub, 📄 No surtido, borrar pedidos |
 | ✅ **Armados** | Reportes terminados: *Hoy* y *Historial* |
-| ☑️ **Verificar captura** | Próximamente: comparar lo capturado en Retool contra lo armado |
+| ☑️ **Verificar captura** | Comparar lo capturado en Retool contra lo armado (ver abajo) |
 | 📭 **Faltantes** | Conflictos de inventario, faltantes de hoy y el CSV del día |
 | 🔄 **Cierre** | Inventario de cierre y complementos |
 | 👤 **Armadores** | La lista de nombres |
@@ -399,6 +399,36 @@ distintos reportaron ese producto — un 2 o más quiere decir que de verdad no 
 desmentidos**.
 
 ---
+
+### ☑️ Verificar captura
+
+Sirve para encontrar errores al teclear las salidas en Retool — un número en el renglón equivocado no se nota a simple
+vista.
+
+1. Captura las salidas en Retool como siempre.
+2. En Retool, exporta la tabla de ese hub (CSV).
+3. En **☑️ Verificar captura** hay una tarjeta por hub, igual que en Pedidos. Toca **Subir exportación** en la tarjeta
+   de ese hub y elige el archivo.
+
+La app primero revisa que el archivo **sea el pedido de ese hub** (compara las solicitudes, que son números largos y
+distintos en cada hub y cada día). Si no coincide, sale **⛔ Archivo equivocado**, no se guarda nada y el botón
+**Subir otro archivo** te deja escoger el correcto. Si el archivo es de otro hub, te dice de cuál.
+
+La tarjeta muestra **☑️ Capturado** o **⚠️ Captura con errores**; **Ver detalle** abre la lista.
+
+Luego revisa producto por producto lo armado contra lo capturado. Los errores salen primero:
+
+| | Qué significa | Qué hacer |
+|---|---|---|
+| 🔴 **Capturado diferente** | Lo tecleado no es lo armado. Puede decir *intercambiado con…*, *es el valor del renglón vecino* o *un dígito de más o de menos* | Corregir en Retool |
+| 🔴 **Armado, no capturado** | Se armó pero en Retool está vacío | Capturarlo |
+| 🔴 **Capturado sin armar** | Hay salida en Retool de algo que no se armó | Borrarlo en Retool |
+| 🟠 **Posible error de armado** | Se armó mucho más de lo pedido (5 veces o más, y 10 piezas o más de diferencia) — aunque se haya capturado igual | Revisar físicamente |
+
+Los faltantes que quedaron vacíos en Retool no se marcan: no hace falta capturarlos.
+
+El resultado se guarda. En **📦 Pedidos** el hub muestra **☑️ Capturado** o **⚠️ Captura con errores**, y el resumen de
+ayer cuenta cuántos se capturaron bien. Si corriges Retool, vuelve a exportar y súbelo otra vez: reemplaza al anterior.
 
 ## 6. Inventario y segunda ronda
 

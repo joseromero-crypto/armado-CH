@@ -130,6 +130,22 @@
     .st-prog{background:#FFF8E1;color:#8a5a00}
     .st-lost{background:var(--red-light);color:var(--red)}
     .st-pend{background:var(--gray-100);color:var(--gray-600)}
+    /* v2.3/F — verificar captura */
+    .vc-head{font-size:13px;font-weight:700;color:var(--gray-700)}
+    .vc-same{margin-top:8px;padding:10px 12px;border-radius:var(--radius-sm);font-size:13px;font-weight:700}
+    .vc-same-ok{background:var(--green-light);color:var(--green-dark)}
+    .vc-same-warn{background:#FFF8E1;color:#8a5a00}
+    .vc-same-bad{background:var(--red-light);color:var(--red)}
+    .vc-counts{margin-top:8px;font-size:13px;font-weight:700;color:var(--gray-900)}
+    .vc-saved{margin-top:4px;font-size:12px;color:var(--gray-500)}
+    .vc-list{margin-top:8px}
+    .vc-row{display:flex;gap:10px;background:white;border-radius:var(--radius-sm);box-shadow:var(--shadow-sm);padding:10px 12px;margin-bottom:6px}
+    .vc-icon{font-size:16px;line-height:1.3}
+    .vc-row-main{flex:1;min-width:0}
+    .vc-row-name{font-size:13px;font-weight:700;color:var(--gray-900)}
+    .vc-row-nums{font-size:12px;color:var(--gray-600);margin-top:2px;font-variant-numeric:tabular-nums}
+    .vc-row-why{font-size:12px;font-weight:700;color:var(--red);margin-top:3px}
+    .vc-row-why.vc-asm{color:var(--orange)}
     /* v2.3/B2 — morning banner */
     .morning-banner{border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;border:1.5px solid}
     .mb-ok{background:var(--green-light);border-color:var(--green)}
@@ -550,7 +566,9 @@
 
     <section class="coord-page" id="coord-page-verificar" style="display:none">
       <div class="coord-section-title" style="margin-top:0">Verificar captura</div>
-      <div class="cierre-box"><div class="cierre-status" style="font-weight:400;line-height:1.5">Próximamente: sube la exportación de Retool de un hub y la app la compara contra lo armado — cantidades capturadas distintas, renglones sin capturar y posibles errores de armado.</div></div>
+      <div class="coord-page-note">Después de capturar las salidas en Retool, exporta la tabla de cada hub y súbela en su tarjeta. La app revisa que el archivo sea el pedido de ese hub y lo compara contra lo armado: cantidades capturadas distintas, renglones sin capturar y posibles errores de armado.</div>
+      <div id="vc-hubs"></div>
+      <div id="vc-result" style="margin-top:14px"></div>
     </section>
 
     <section class="coord-page" id="coord-page-faltantes" style="display:none">
@@ -1569,7 +1587,8 @@ async function showCoordPage(name){
   } else if(name==='armados'){
     if(!_coordHubData) document.getElementById('coord-reports').innerHTML='<div class="coord-empty">Cargando reportes…</div>';
     try{ renderArmadosPage(await getCoordHubData()); }catch(e){ coordLoadFailed('coord-reports', e); }
-  } else if(name==='faltantes') loadInvToday();
+  } else if(name==='verificar') vcInit();
+  else if(name==='faltantes') loadInvToday();
   else if(name==='cierre') refreshCierreStatus();
   else if(name==='armadores'){ await loadAssemblers(); renderAssemblerList(); } // loadAssemblers never throws
   else if(name==='imagenes') refreshImgDbStatus();
@@ -1680,6 +1699,18 @@ async function fetchCoordHubData(){
     }
   }));
 }
+// {errores, mismoPedido} for a saved verification, or null when the order hasn't been verified
+async function verifSummary(hub, date, names){
+  if(!date || !names || !names.has(bareOrderDate(date))) return null;
+  try{ const v=JSON.parse(await sbFetch(verifPath(hub, date)));
+    return { errores:(v.counts&&v.counts.errores)||0, mismoPedido:v.sameOrder?v.sameOrder.pct>=CAPT_SAME_WARN:true };
+  }catch(_){ return null; }
+}
+function verifChipHtml(v){
+  if(!v) return '';
+  if(!v.mismoPedido) return '<span class="st-chip st-lost">⛔ Captura de otro pedido</span>';
+  return v.errores ? `<span class="st-chip st-lost">⚠️ Captura con errores (${v.errores})</span>` : '<span class="st-chip st-ok">☑️ Capturado</span>';
+}
 // Stage 2 — status per hub (mutates hubData): status of the CURRENT order only, canRecover, and the morning banner's
 // "yesterday" (the newest order date before today, from pedido_completo — order CSVs are deleted daily).
 async function computeCoordStatuses(hubData){
@@ -1688,6 +1719,9 @@ async function computeCoordStatuses(hubData){
     try{
       h.status=h.lo ? await orderStatus(h.hub, h.currentOd, h._parts, h._reports) : null;
       h.canRecover=!!(h.status&&h.status.kind==='perdido'); // v2.2/F5 — 🛟 exactly when progress was lost
+      // v2.3/F — Retool capture verified? one listing per hub; the small JSON is read only when it exists
+      h._verifs=new Set((await sbList(`verificaciones/${HUB_SLUG[h.hub]}/`).catch(()=>[])).map(f=>(f.name||'').replace(/\.json$/,'')));
+      if(h.status && h.status.kind==='armado') h.status.verif=await verifSummary(h.hub, h.cutoffDate, h._verifs);
       // order dates this hub had (for the banner) — pedido_completo, since order CSVs are deleted daily
       h.pcDates=(await sbList(`pedido_completo/${HUB_SLUG[h.hub]}/`).catch(()=>[]))
         .map(f=>(f.name||'').replace(/\.json$/,'')).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d));
@@ -1697,7 +1731,8 @@ async function computeCoordStatuses(hubData){
   const today=todayStr();
   const prev=hubData.flatMap(h=>h.pcDates).filter(d=>d<today).sort().pop()||null;
   hubData.morning = prev ? { date:prev, rows: await Promise.all(hubData.filter(h=>h.pcDates.includes(prev)).map(async h=>({
-      hub:h.hub, st: (h.currentOd===prev && h.status) ? h.status : await orderStatus(h.hub, prev, h._parts, h._reports).catch(()=>({kind:'pendiente'})) }))) } : null;
+      hub:h.hub, st: (h.currentOd===prev && h.status) ? h.status : await orderStatus(h.hub, prev, h._parts, h._reports).then(async st=>{
+        if(st.kind==='armado' && h._verifs) st.verif=await verifSummary(h.hub, prev, h._verifs); return st; }).catch(()=>({kind:'pendiente'})) }))) } : null;
   hubData.statusDone=true;
   runCoordMaintenance(hubData); // after the page is drawn, never competing with it
   return hubData;
@@ -1748,11 +1783,12 @@ function renderMorningBanner(m){
   const rows=m.rows.slice().sort((a,b)=>a.hub.localeCompare(b.hub));
   const ok=rows.filter(r=>r.st.kind==='armado'), notOk=rows.filter(r=>r.st.kind!=='armado');
   const conPend=ok.filter(r=>r.st.done!=null&&r.st.total!=null&&r.st.done<r.st.total).length;
+  const capt=ok.filter(r=>r.st.verif&&r.st.verif.mismoPedido&&!r.st.verif.errores).length, captErr=ok.filter(r=>r.st.verif&&(r.st.verif.errores||!r.st.verif.mismoPedido)).length;
   const cls=notOk.some(r=>r.st.kind==='perdido'||r.st.kind==='progreso')?'warn':(notOk.length?'pend':'ok');
   const chips=notOk.map(r=>`<button class="mb-hub" onclick="document.getElementById('hubcard-${HUB_SLUG[r.hub]}')?.scrollIntoView({behavior:'smooth',block:'center'})">${statusChipHtml(r.st).replace(/<[^>]+>/g,'')} · ${escH(r.hub)}</button>`).join('');
   el.innerHTML=`<div class="morning-banner mb-${cls}">
       <div class="mb-title">${cls==='ok'?'✅ ':''}Pedidos del ${escH(dayHeading(m.date).replace(/^./,c=>c.toLowerCase()))}</div>
-      <div class="mb-sub">${ok.length} de ${rows.length} armados${conPend?` · ${conPend} con pendientes`:''}${notOk.length?` · ${notOk.length} sin terminar`:''}</div>
+      <div class="mb-sub">${ok.length} de ${rows.length} armados${conPend?` · ${conPend} con pendientes`:''}${notOk.length?` · ${notOk.length} sin terminar`:''} · ${capt} capturado${capt!==1?'s':''}${captErr?` · ⚠️ ${captErr} con errores de captura`:''}</div>
       ${chips?`<div class="mb-hubs">${chips}</div>`:''}
     </div>`;
 }
@@ -1779,7 +1815,7 @@ function renderPedidosPage(hubData){
     const detail=pendingSt ? 'Cargando estado…' : (statusError ? '⚠ No se pudo calcular el estado' : statusDetailText(status));
     return `<div class="hub-card" id="hubcard-${HUB_SLUG[hub]}">
       <div class="hub-card-top"><span class="hub-card-name">${escH(hub)}</span>${loaded?(pendingSt?'<span class="st-chip st-pend">…</span>':statusChipHtml(status)):''}</div>
-      <div class="hub-card-meta">${badge}${sub?`<span>${escH(sub)}</span>`:''}</div>
+      <div class="hub-card-meta">${badge}${status&&status.verif?verifChipHtml(status.verif):''}${sub?`<span>${escH(sub)}</span>`:''}</div>
       ${detail?`<div class="hub-card-detail">${escH(detail)}</div>`:''}
       <div class="hub-card-actions">
         <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
@@ -4079,6 +4115,282 @@ async function generarTodosComplementos(){
   for(const h of targets){ if(await generarComplemento(h.hub, true)) ok++; }
   toast(`✓ ${ok} complemento${ok!==1?'s':''} generado${ok!==1?'s':''}`);
   revisarCierre();
+}
+
+/* ── v2.3/F — VERIFICAR CAPTURA ──
+   The salidas are typed into Retool by hand; misclicks don't show at a glance. The coordinator uploads the Retool
+   export for one hub (one file per hub per day — it has no hub column) and the app compares, per product:
+     S = Solicitud (the order, from pedido_completo) · A = Armado in the app (R1 + R2 reports) · R = Salida in Retool.
+   Three checks: same order? (exact Solicitud match — long decimals) · capture (A vs R, exact) · assembly (A vs S —
+   catches an app quantity that was wrong and then typed "correctly"). Read-only toward Retool. Prototyped on
+   MH Contry 19/10: 451/451 same order, 147/153 correct, Prispas armado 6 not typed. */
+const CAPT_SAME_OK=0.9, CAPT_SAME_WARN=0.6;      // share of identical Solicitud: ≥ OK same order · < WARN wrong file
+const CAPT_PZ_X=5, CAPT_PZ_MIN=10;               // posible error de armado (Pz): A ≥ 5×S and A ≥ S+10 — boxes reach 3.8×
+const CAPT_KG_X=3, CAPT_KG_MIN=2;                // same for Kg: A ≥ 3×S and A ≥ S+2 kg
+function capKey(bc, name){ return bcKey(cleanBC(bc)) || ('norm:'+normName(name||'')); }
+function capNum(v){ const t=String(v??'').trim(); if(t==='') return null; const n=parseFloat(t); return isNaN(n)?null:n; }
+// 16 → 160 / 1 / 166 / 6 : one digit added or dropped
+function digitSlip(a, r){
+  if(a==null||r==null||a===r) return false;
+  if(r===a*10||a===r*10) return true;
+  const A=String(a), R=String(r);
+  if(Math.abs(A.length-R.length)!==1) return false;
+  const [lo,hi]=A.length<R.length?[A,R]:[R,A];
+  for(let i=0;i<hi.length;i++){ if(hi.slice(0,i)+hi.slice(i+1)===lo) return true; }
+  return false;
+}
+// How many of the order's products have exactly the same Solicitud in the export → {same, total, pct}.
+// The decimals are unique per hub and day, so this both proves "same order" and finds which hub a file belongs to.
+function sameOrderScore(orderRows, retoolRows){
+  const R={}; retoolRows.forEach(r=>{ R[capKey(pickCol(r,'Código de barras'), pickCol(r,'Producto'))]=capNum(pickCol(r,'Solicitud (kg/pz)')); });
+  let same=0, total=0;
+  orderRows.forEach(o=>{ total++; const a=capNum(o['Solicitud (kg/pz)']), b=R[capKey(o['Código de barras'], o['Producto'])]; if(a!=null&&b!=null&&Math.abs(a-b)<1e-9) same++; });
+  return { same, total, pct: total?same/total:0 };
+}
+// orderRows: pedido_completo rows · reportRows: R1 (+R2) report rows · retoolRows: the export, header-keyed
+function compareCaptura(orderRows, reportRows, retoolRows){
+  const O={}; orderRows.forEach(r=>{ O[capKey(r['Código de barras'], r['Producto'])]=r; });
+  // Assembled: summed over the reports (R1 + R2 → the cumulative Salida Retool holds). Pendiente = not assembled.
+  const A={}, An={};
+  reportRows.forEach(r=>{
+    const k=capKey(r['Código en sistema'], r['Producto']); An[k]=r['Producto'];
+    const n=capNum(r['Armado']);
+    if(String(r['Estado']||'').trim()==='Pendiente'||n==null){ if(!(k in A)) A[k]=null; return; }
+    A[k]=(A[k]||0)+n;
+  });
+  const R={}, Rr={}, expOrder=[];
+  retoolRows.forEach(r=>{ const k=capKey(pickCol(r,'Código de barras'), pickCol(r,'Producto')); Rr[k]=r; R[k]=capNum(pickCol(r,'Salida (kg/pz)')); expOrder.push(k); });
+  // 1. same order? — Solicitud are long decimals (37.07333916935858): an exact match means the same order
+  const sameOrder=sameOrderScore(orderRows, retoolRows);
+  // neighbours in both orders a typist may have seen: A–Z (the registro copilot) and the export's own order
+  const az=Object.keys(A).filter(k=>A[k]!=null).sort((x,y)=>String(An[x]||'').localeCompare(String(An[y]||''),'es'));
+  const ex=expOrder.filter(k=>R[k]!=null||A[k]!=null);
+  const neighbours=k=>{ const out=new Set(); for(const seq of [az,ex]){ const i=seq.indexOf(k); if(i<0) continue; if(i>0) out.add(seq[i-1]); if(i<seq.length-1) out.add(seq[i+1]); } out.delete(k); return [...out]; };
+  const nameOf=k=>String(An[k]||(Rr[k]&&pickCol(Rr[k],'Producto'))||(O[k]&&O[k]['Producto'])||k);
+  const unitOf=k=>String((O[k]&&O[k]['Kg/Pz'])||(Rr[k]&&pickCol(Rr[k],'Kg/Pz'))||'Pz').trim();
+  const keys=[...new Set([...Object.keys(A).filter(k=>A[k]!=null), ...Object.keys(R).filter(k=>R[k]!=null)])];
+  const rows=keys.map(k=>{
+    const a=A[k]??null, r=R[k]??null, unit=unitOf(k), kg=unit==='Kg', tol=kg?0.01:0;
+    const sRaw=O[k]?capNum(O[k]['Solicitud (kg/pz)']):null, s=sRaw==null?null:(kg?sRaw:Math.ceil(sRaw));
+    let cls='ok', tag='';
+    // Only real mistakes. A faltante (A=0) left blank in Retool is fine — faltantes don't need capturing (Jose).
+    if(r==null){ if(a>0) cls='no_capturado'; }
+    else if((a==null||a===0) && r>0) cls='sin_armar';
+    else if(a!=null && Math.abs(r-a)>tol){
+      cls='diferente';
+      const nb=neighbours(k);
+      const sw=nb.find(j=>A[j]!=null&&R[j]!=null&&Math.abs(r-A[j])<=tol&&Math.abs(R[j]-a)<=tol&&Math.abs(A[j]-a)>tol);
+      if(sw) tag=`intercambiado con «${nameOf(sw)}»`;
+      else{
+        const v=nb.find(j=>A[j]!=null&&Math.abs(r-A[j])<=tol);
+        if(v) tag=`es el valor de «${nameOf(v)}» (renglón vecino)`;
+        else if(digitSlip(a,r)) tag='un dígito de más o de menos';
+      }
+    }
+    // 3. assembly check, independent of Retool: whole boxes are normal (up to 3.8× seen), 5× and +10 is not
+    const asm = a!=null && s!=null && s>0 && (kg ? (a>=CAPT_KG_X*s && a>=s+CAPT_KG_MIN) : (a>=CAPT_PZ_X*s && a>=s+CAPT_PZ_MIN));
+    return { k, producto:nameOf(k), unit, s, a, r, cls, tag, asm };
+  }).sort((x,y)=>x.producto.localeCompare(y.producto,'es'));
+  const counts={ total:rows.length, ok:0, diferente:0, no_capturado:0, sin_armar:0, posible_armado:0 };
+  rows.forEach(x=>{ counts[x.cls]++; if(x.asm) counts.posible_armado++; });
+  counts.errores=counts.diferente+counts.no_capturado+counts.sin_armar+counts.posible_armado;
+  const by={}; retoolRows.forEach(r=>{ const w=String(pickCol(r,'Registrado por')||'').trim(); if(w) by[w]=(by[w]||0)+1; });
+  const capturadoPor=Object.keys(by).sort((x,y)=>by[y]-by[x])[0]||'';
+  const capturadoAt=retoolRows.map(r=>String(pickCol(r,'Actualización salida')||'').trim()).filter(Boolean).sort().pop()||'';
+  return { sameOrder, rows, counts, capturadoPor, capturadoAt };
+}
+
+// What the app holds for one order: its rows (pedido_completo — order CSVs are deleted daily) and its reports (R1 + R2)
+async function loadCapturaRefs(hub, od, preOrderRows){
+  const bare=bareOrderDate(od), slug=HUB_SLUG[hub];
+  let orderRows=preOrderRows||null;
+  if(!orderRows){ try{ orderRows=(JSON.parse(await sbFetch(`pedido_completo/${slug}/${bare}.json`)).rows)||null; }catch(_){} }
+  if(!orderRows){ try{ orderRows=Papa.parse(await sbFetch(`orders/${slug}/${bare}.csv`),{header:true,dynamicTyping:false,skipEmptyLines:true}).data; }catch(_){} }
+  if(!orderRows||!orderRows.length) throw new Error(`no encontré el pedido del ${ddmm(bare)} de ${hub}`);
+  const files=(await sbList(`reports/${slug}/`)).filter(f=>f.name&&f.name.endsWith('.csv'));
+  const r1=(await reportsForOrder(hub, bare, files)).slice(0,1), r2=await reportsForOrder(hub, bare+'-r2', files);
+  if(!r1.length) throw new Error(`el pedido del ${ddmm(bare)} de ${hub} no tiene reporte todavía`);
+  const reportRows=[], reportNames=[];
+  for(const f of [...r1, ...r2]){
+    const csv=await sbFetch(`reports/${slug}/${f.name}`);
+    reportRows.push(...Papa.parse(csv.split(/\r?\n/).filter(l=>!l.startsWith('#')).join('\r\n'),{header:true,dynamicTyping:false,skipEmptyLines:true}).data.filter(r=>r['Producto']));
+    reportNames.push(f.name);
+  }
+  const armadores=[...new Set(reportRows.map(r=>String(r['Armador']||'').trim()).filter(Boolean))];
+  return { orderRows, reportRows, reportNames, armadores };
+}
+function verifPath(hub, od){ return `verificaciones/${HUB_SLUG[hub]}/${bareOrderDate(od)}.json`; }
+
+// ── page state ── _vc = the result on screen {hub, od, result, saved} · _vcHubs = per hub card data
+let _vc=null, _vcView='errores', _vcHubs={};
+const VC_MATCH_ORDERS=3; // a file is checked against the hub's newest N orders that have a report
+// Same layout as Cargar pedidos: one card per hub, each with its own upload. Card = the hub's newest order with a
+// round-1 report, and its saved verification (if any).
+async function vcInit(){
+  const list=document.getElementById('vc-hubs');
+  if(!Object.keys(_vcHubs).length) list.innerHTML='<div class="coord-empty">Cargando…</div>';
+  try{
+    const d=await getCoordHubData();
+    await Promise.all(d.map(async h=>{
+      const dates=[...new Set(h._reports.filter(f=>!/_r2_/.test(f.name)).map(f=>reportDisplayInfo(f.name).dateStr))].sort().reverse().slice(0,VC_MATCH_ORDERS);
+      const names=new Set((await sbList(`verificaciones/${HUB_SLUG[h.hub]}/`).catch(()=>[])).map(f=>(f.name||'').replace(/\.json$/,'')));
+      // saved verifications for the hub's recent orders: the newest is the card; older ones show as a line under it
+      const byDate={};
+      await Promise.all(dates.filter(d=>names.has(d)).map(async d=>{ try{ byDate[d]=JSON.parse(await sbFetch(verifPath(h.hub, d))); }catch(_){} }));
+      _vcHubs[h.hub]={ dates, od:dates[0]||null, saved:byDate[dates[0]]||null, byDate };
+    }));
+    vcRenderHubs();
+  }catch(e){ coordLoadFailed('vc-hubs', e); }
+}
+function vcRenderHubs(){
+  document.getElementById('vc-hubs').innerHTML=HUBS.map(hub=>{
+    const v=_vcHubs[hub]||{}, slug=HUB_SLUG[hub];
+    if(!v.od) return `<div class="hub-card"><div class="hub-card-top"><span class="hub-card-name">${escH(hub)}</span><span class="st-chip st-pend">Sin reportes</span></div></div>`;
+    const sv=v.saved;
+    const chip=sv ? verifChipHtml({errores:(sv.counts&&sv.counts.errores)||0, mismoPedido:true}) : '<span class="st-chip st-pend">⚪ Sin verificar</span>';
+    const detail=sv ? `${(sv.armadores||[]).length?`Armado por ${escH(sv.armadores.join(', '))} · `:''}verificado ${escH(whenLabel(Date.parse(sv.checkedAt)))}` : 'Sube la exportación de Retool de este hub';
+    return `<div class="hub-card" id="vc-card-${slug}">
+      <div class="hub-card-top"><span class="hub-card-name">${escH(hub)}</span>${chip}</div>
+      <div class="hub-card-meta"><span class="coord-hub-badge loaded">Pedido ${escH(ddmm(v.od))}</span></div>
+      <div class="hub-card-detail">${detail}</div>
+      ${v.dates.slice(1).filter(d=>v.byDate&&v.byDate[d]).map(d=>{ const e=(v.byDate[d].counts&&v.byDate[d].counts.errores)||0;
+        return `<div class="hub-card-detail">Pedido ${escH(ddmm(d))}: ${e?`⚠️ ${e} error${e>1?'es':''}`:'☑️ sin errores'} · <button class="btn-retry" onclick="vcShowHub('${escH(hub)}','${d}')">Ver</button></div>`; }).join('')}
+      <div class="hub-card-actions">
+        <label class="coord-upload-btn">${sv?'Subir de nuevo':'Subir exportación'}<input type="file" accept=".csv" id="vc-file-${slug}" onchange="vcUploadHub('${escH(hub)}',this)"></label>
+        ${sv?`<button class="coord-nosurt-btn" onclick="vcShowHub('${escH(hub)}')">Ver detalle</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+function vcShowHub(hub, od){
+  const v=_vcHubs[hub]; const d=od||(v&&v.od); const sv=v&&(v.byDate||{})[d]; if(!sv) return;
+  _vc={hub, od:d, result:sv, saved:sv}; vcRender();
+  document.getElementById('vc-result').scrollIntoView({behavior:'smooth', block:'start'});
+}
+// Which hub's order does a file belong to? (only used to name it in the wrong-file warning) — every hub's
+// pedido_completo on the day the salidas were registered and the day before; best Solicitud match.
+async function detectCapturaOrder(retoolRows){
+  const days={}; retoolRows.forEach(r=>{ const t=Date.parse(String(pickCol(r,'Actualización salida')||'')); if(t){ const d=localDateStr(new Date(t)); days[d]=(days[d]||0)+1; } });
+  const day=Object.keys(days).sort((a,b)=>days[b]-days[a])[0]||todayStr();
+  let best=null;
+  for(const d of [day, localDateStr(new Date(Date.parse(day+'T12:00:00Z')-86400000))]){
+    await Promise.all(HUBS.map(async hub=>{
+      let rows=null; try{ rows=JSON.parse(await sbFetch(`pedido_completo/${HUB_SLUG[hub]}/${d}.json`)).rows||null; }catch(_){}
+      if(!rows) return;
+      const sc=sameOrderScore(rows, retoolRows);
+      if(!best || sc.pct>best.score.pct) best={hub, od:d, score:sc};
+    }));
+    if(best && best.score.pct>=CAPT_SAME_OK) break;
+  }
+  return best;
+}
+// Upload for ONE hub. The file is cross-checked against this hub's order (its Solicitud decimals); if it isn't this
+// hub's order, nothing is compared or saved and a warning asks for the right file.
+async function vcUploadHub(hub, input){
+  const file=input.files[0]; input.value=''; if(!file) return;
+  const v=_vcHubs[hub]; if(!v||!v.od) return;
+  const slug=HUB_SLUG[hub], card=document.getElementById(`vc-card-${slug}`);
+  const det=card&&card.querySelector('.hub-card-detail'); if(det) det.textContent='Revisando el archivo…';
+  try{
+    const retoolRows=Papa.parse(await file.text(),{header:true,dynamicTyping:false,skipEmptyLines:true}).data.filter(r=>String(pickCol(r,'Producto')||'').trim());
+    if(!retoolRows.length || pickCol(retoolRows[0],'Salida (kg/pz)')===undefined){
+      vcWrongFile(hub, 'Este archivo no es una exportación de Retool (le falta la columna "Salida (kg/pz)").'); return;
+    }
+    // this hub's newest orders with a report — the file must match one of them
+    let best=null;
+    for(const od of v.dates){
+      let rows=null; try{ rows=JSON.parse(await sbFetch(`pedido_completo/${slug}/${od}.json`)).rows||null; }catch(_){}
+      if(!rows) continue;
+      const sc=sameOrderScore(rows, retoolRows);
+      if(!best || sc.pct>best.score.pct) best={od, score:sc, orderRows:rows};
+      if(sc.pct>=CAPT_SAME_OK) break;
+    }
+    if(!best || best.score.pct<CAPT_SAME_WARN){
+      if(det) det.textContent='Buscando de qué hub es…';
+      const other=await detectCapturaOrder(retoolRows).catch(()=>null);
+      const hint=(other && other.hub!==hub && other.score.pct>=CAPT_SAME_OK) ? `\n\nParece ser el archivo de ${other.hub} (pedido del ${ddmm(other.od)}).` : '';
+      vcWrongFile(hub, `Este archivo no corresponde al pedido de ${hub}: solo ${best?best.score.same:0} de ${best?best.score.total:0} solicitudes coinciden.${hint}`);
+      return;
+    }
+    if(det) det.textContent='Comparando…';
+    const refs=await loadCapturaRefs(hub, best.od, best.orderRows);
+    const res=compareCaptura(refs.orderRows, refs.reportRows, retoolRows);
+    _vc={hub, od:best.od, saved:null, result:{ v:1, hub, orderDate:best.od, checkedAt:serverNow().toISOString(), archivo:file.name, reportes:refs.reportNames,
+      armadores:refs.armadores, capturadoPor:res.capturadoPor, capturadoAt:res.capturadoAt, sameOrder:res.sameOrder, counts:res.counts, rows:res.rows }};
+    if(await vcSave(true)){
+      (v.byDate=v.byDate||{})[best.od]=_vc.saved;
+      if(best.od===v.od) v.saved=_vc.saved;
+      else toast(`Verificado contra el pedido del ${ddmm(best.od)}`, 3500);
+    }
+    vcRenderHubs(); vcRender();
+    document.getElementById('vc-result').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(e){ if(det) det.textContent='⚠ '+String(e&&e.message||e); }
+}
+// Wrong file → a warning whose button opens the file picker again for the same hub
+function vcWrongFile(hub, why){
+  vcRenderHubs();
+  showInfoModal('⛔ Archivo equivocado', `${why}\n\nNo se guardó nada. Sube la exportación de Retool de ${hub}.`,
+    { okLabel:'Subir otro archivo', onOk:()=>document.getElementById(`vc-file-${HUB_SLUG[hub]}`)?.click(), extra:{label:'Cancelar', fn:()=>{}} });
+}
+// Saved per hub + order date; a re-upload replaces it (the old one is kept as a respaldo). Only rows with a finding are stored.
+async function vcSave(quiet){
+  if(!_vc||!_vc.result) return false;
+  const b=_vc.result, keep={...b, rows:b.rows.filter(x=>x.cls!=='ok'||x.asm)};
+  try{
+    await sbReplace(verifPath(b.hub, b.orderDate), JSON.stringify(keep), 'application/json',
+      {backup:{hub:b.hub, kind:'verificacion', orderDate:bareOrderDate(b.orderDate), motivo:'verificacion_reemplazada'}});
+    _vc.saved=keep; _coordStatusP=null; // the Pedidos status chip reads it on next view
+    if(!quiet){ toast('✓ Verificación guardada'); vcRender(); }
+    return true;
+  }catch(e){ toast('❌ No se pudo guardar la verificación: '+e.message, 4000); return false; }
+}
+const VC_CLS={ diferente:{icon:'🔴',txt:'Capturado diferente'}, no_capturado:{icon:'🔴',txt:'Armado, no capturado'},
+  sin_armar:{icon:'🔴',txt:'Capturado sin armar'}, ok:{icon:'✅',txt:'Correcto'} };
+function vcFmt(n, unit){ return n==null?'—':(unit==='Kg'?Number(n).toFixed(2):String(Math.round(n))); }
+function vcSetView(v){ _vcView=v; vcRender(); }
+function vcRender(){
+  const out=document.getElementById('vc-result'); const b=_vc&&_vc.result; if(!b){ out.innerHTML=''; return; }
+  const so=b.sameOrder, c=b.counts, pct=Math.round(so.pct*100);
+  const sameCls=so.pct>=CAPT_SAME_OK?'ok':(so.pct>=CAPT_SAME_WARN?'warn':'bad');
+  const sameTxt=so.pct>=CAPT_SAME_OK?`✅ Mismo pedido (${so.same} de ${so.total} solicitudes idénticas)`
+    : so.pct>=CAPT_SAME_WARN?`⚠ Probablemente el mismo pedido — ${so.same} de ${so.total} solicitudes idénticas (${pct}%)`
+    : `⛔ No parece el pedido de ${b.hub} del ${ddmm(bareOrderDate(b.orderDate))} — solo ${so.same} de ${so.total} solicitudes coinciden (${pct}%). ¿Hub o día equivocado?`;
+  const cap=b.capturadoAt?` · capturado${b.capturadoPor?` por ${b.capturadoPor.split('@')[0]}`:''} ${whenLabel(Date.parse(b.capturadoAt))}`:'';
+  // worst first: 🔴 capture errors, 🟠 possible assembly error, ✅ — A–Z within each
+  const sev=x=>(x.cls==='diferente'||x.cls==='no_capturado'||x.cls==='sin_armar')?0:x.asm?1:2;
+  const bySev=(x,y)=>sev(x)-sev(y)||x.producto.localeCompare(y.producto,'es');
+  const errRows=b.rows.filter(x=>x.cls!=='ok'||x.asm).sort(bySev);
+  const rows=_vcView==='todo'?b.rows.slice().sort(bySev):errRows;
+  const capErr=c.diferente+c.no_capturado+c.sin_armar;
+  const rowHtml=x=>{
+    const m=VC_CLS[x.cls]||VC_CLS.ok;
+    const nums=`pedido ${vcFmt(x.s,x.unit)} · armado ${vcFmt(x.a,x.unit)} · capturado ${x.r==null?'—':vcFmt(x.r,x.unit)}`;
+    const lines=[];
+    if(x.cls!=='ok') lines.push(`<div class="vc-row-why">${m.txt}${x.tag?` — ${escH(x.tag)}`:''}</div>`);
+    if(x.asm) lines.push(`<div class="vc-row-why vc-asm">🟠 Posible error de armado${x.cls==='ok'?' — se capturó igual que en la app':''}, revisar físicamente</div>`);
+    return `<div class="vc-row vc-${x.cls}"><span class="vc-icon">${x.asm&&x.cls==='ok'?'🟠':m.icon}</span>
+      <div class="vc-row-main"><div class="vc-row-name">${escH(x.producto)}</div><div class="vc-row-nums">${nums}</div>${lines.join('')}</div></div>`;
+  };
+  const savedOnlyErrors=!!(_vc.saved && _vc.result===_vc.saved);
+  out.innerHTML=`
+    <div class="vc-head">${escH(b.hub)} · pedido del ${escH(ddmm(bareOrderDate(b.orderDate)))}${(b.armadores||[]).length?` · armado por ${escH(b.armadores.join(', '))}`:''}${escH(cap)}</div>
+    <div class="vc-same vc-same-${sameCls}">${escH(sameTxt)}</div>
+    <div class="vc-counts">${c.total} productos · ✅ ${c.ok} correctos${capErr?` · 🔴 ${capErr} error${capErr>1?'es':''} de captura`:''}${c.posible_armado?` · 🟠 ${c.posible_armado} posible error de armado`:''}</div>
+    ${_vc.saved?`<div class="vc-saved">Guardada ${escH(whenLabel(Date.parse(_vc.saved.checkedAt)))} · ${escH(_vc.saved.archivo||'')}</div>`:''}
+    <div class="metrics-filters" style="margin-top:10px">
+      <div class="list-filter-seg" style="margin:0"><button class="${_vcView==='errores'?'active':''}" onclick="vcSetView('errores')">Errores (${errRows.length})</button>${savedOnlyErrors?'':`<button class="${_vcView==='todo'?'active':''}" onclick="vcSetView('todo')">Todo</button>`}</div>
+      <button class="mf-dl" onclick="vcDownloadCSV()">⬇ CSV</button>
+    </div>
+    <div class="vc-list">${(savedOnlyErrors?errRows:rows).length?(savedOnlyErrors?errRows:rows).map(rowHtml).join(''):'<div class="coord-empty">✅ Sin errores de captura.</div>'}</div>`;
+}
+function vcDownloadCSV(){
+  const b=_vc&&_vc.result; if(!b) return;
+  // Hub + Pedido on every row, so rows copied or forwarded elsewhere still say where to fix them
+  const pedido=bareOrderDate(b.orderDate).split('-').reverse().join('/');
+  const head=['Hub','Pedido','Producto','Unidad','Solicitado','Armado','Capturado','Resultado','Detalle','Posible error de armado'];
+  const body=b.rows.map(x=>[b.hub,pedido,x.producto,x.unit,vcFmt(x.s,x.unit),vcFmt(x.a,x.unit),x.r==null?'':vcFmt(x.r,x.unit),(VC_CLS[x.cls]||VC_CLS.ok).txt,x.tag||'',x.asm?'Sí':'']);
+  const csv=[head,...body].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  triggerDownload(csv, `verificacion_${b.hub.replace(/\s+/g,'_')}_${bareOrderDate(b.orderDate)}.csv`);
 }
 
 /* ── REGISTRATION COPILOT (§3.7) — the typing stays manual; this makes it faster and harder to lose your place ── */

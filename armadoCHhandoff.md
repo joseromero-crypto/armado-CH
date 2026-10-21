@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p3')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-f')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -136,6 +136,7 @@ Every path the app reads or writes, who writes it, and how it dies.
 | `partials/{slug}/{orderDate}.json` | nothing (pre-v2.2 legacy) | read as a fallback | `clearPartialSave` |
 | `reports/{slug}/{orderDate}_{finishDate}_{HH-MM}_{Armadores}.csv` | `finalizeAssembly` (v2.3 two-date name) | coordinator lists, registro, 📋 Pedidos armados, `armadoMapForHub` | coordinator 🗑 `deleteReport` (respaldo first) |
 | `reports/{slug}/{orderDate}_r2_{finishDate}_{HH-MM}_{Armadores}.csv` | same, ronda 2 | same | same |
+| `verificaciones/{slug}/{orderDate}.json` | `vcSave` (Verificar captura) — summary + only the rows with a finding; a re-upload replaces it via `sbReplace` (old one → respaldo) | Pedidos status chip, morning banner, Verificar page | replaced on re-upload |
 | `respaldos/{slug}/{orderDate}__{epochMs}__{motivo}.json` | `writeRespaldo` — before every partial clear, order 🗑, report 🗑, same-day overwrite | (Phase 4: Respaldos panel) | `pruneRespaldos` after 30 days |
 | `metrics/{slug}/{report stem}.json` | `uploadMetricsSidecar` | metrics screen | with its report, or 🗑 on the metrics row |
 | `inventario_cierre/{date}.json` | `uploadCierre` | `loadCierre` (newest file) | never |
@@ -301,7 +302,7 @@ Reached from **Finalizar pedido** (`showSummary`, mode `'live'`) or from 📋 Pe
 |---|---|---|---|
 | 📦 Pedidos | `pedidos` | **Morning banner** (v2.3/B2): the newest order date before today from `pedido_completo/` (order CSVs are deleted daily), `N de M armados · K sin terminar`, a chip per unfinished hub that scrolls to its card. **Hub cards** (v2.3/B1): name + status chip (`⚪ Pendiente` · `🟡 En progreso N/M` · `🟡 Continuado después del reporte` · `✅ Armado N/M` / `con pendientes` · `🔴 Se perdió el avance`), `✓ Pedido dd/mm` badge (amber if not today, `· 🔄 R2`) + `N activos · M reserva`, who/when line, then `Subir CSV`, `📄 No surtido`, `🛟 Recuperar` (status = perdido), `🗑` / `🗑 R1`·`🗑 R2` | `renderMorningBanner`, `renderPedidosPage` |
 | ✅ Armados | `armados` | `Hoy` = reports for the currently loaded orders (filename date ≥ the hub's order date) · `Historial` = everything older, dimmed, with hub + 7/30/90/todo filters (default 30). Both are **grouped by order date** (`renderReportGroups`): one collapsible block per day headed `Lunes 19 oct 2026 · ayer` with `N armados · M complementos`; inside, by hub, R2 indented under R1. Newest 3 days open in Historial. Each row: time — armador (+ `· terminado dd/mm` when finished on a later day), `📋` registro, `⬇ CSV`, `🗑`. Legacy one-date reports group under their finish date | `renderArmadosPage`, `renderArchive`, `setArchFilter`, `setArmadosView` |
-| ☑️ Verificar captura | `verificar` | placeholder until v2.3 Part F | — |
+| ☑️ Verificar captura | `verificar` | **Same layout as Pedidos:** one card per hub = its newest order with a round-1 report, status chip (`⚪ Sin verificar` / `☑️ Capturado` / `⚠️ Captura con errores (N)`), its own `Subir exportación` and `Ver detalle`; a line per older recent order that has a verification (§9.12) | `vcInit`, `vcRenderHubs`, `vcUploadHub`, `vcShowHub` |
 | 📭 Faltantes | `faltantes` | `📭 Faltantes del día (CSV)` + ⚠️ conflicts (`Inv > 0` and demand across hubs > Inv), 📭 today's faltantes (desmentido markers), 📜 last 20 `partial_events` | `loadInvToday` |
 | 🔄 Cierre | `cierre` | closing-inventory upload, `Revisar` → candidates → `Generar complemento` / `Generar todos` (§9.7) | `refreshCierreStatus` |
 | 👤 Armadores | `armadores` | add / remove names | `loadAssemblers` + `renderAssemblerList` |
@@ -547,6 +548,34 @@ Boot: `imagedb/version.txt` → cached map if the version matches, else `imagedb
 case/accent-insensitively; ≥1000 keys or rejected). Lookup: bcKey → exact name → first word → prefix scan
 (≥5 chars, so a missing product shows 📦 instead of a wrong photo).
 
+### 9.12 Verificar captura (v2.3 Part F)
+Catches misclicks made while typing salidas into Retool. The coordinator uploads each hub's Retool export **on that
+hub's card** (same table as the order CSV with `Salida (kg/pz)` filled; it has no hub column).
+- **The cross-check is a guard against the wrong file** (`vcUploadHub`): `sameOrderScore` against the hub's newest
+  `VC_MATCH_ORDERS` (3) orders with a report. Best ≥ `CAPT_SAME_WARN` → compared against that order (if it's an older
+  one, a toast says which). Otherwise → **"⛔ Archivo equivocado"** modal, nothing compared or saved, its button
+  re-opens that hub's file picker; `detectCapturaOrder` names the hub the file seems to belong to, when one matches.
+- `loadCapturaRefs(hub, od)` — order rows from `pedido_completo/{slug}/{date}.json` (order CSVs are deleted daily;
+  falls back to the CSV), reports via `reportsForOrder` (newest R1 + all R2, summed → matches Retool's cumulative Salida).
+- `compareCaptura(orderRows, reportRows, retoolRows)` — join `capKey` = `bcKey(cleanBC(barcode))` else `norm:name`:
+  1. **Same order?** share of products whose `Solicitud (kg/pz)` is identical (long decimals). ≥ `CAPT_SAME_OK` 90 % ✅,
+     ≥ `CAPT_SAME_WARN` 60 % ⚠, below ⛔ — then it is **not saved** (button "Guardar de todos modos") and the rows are
+     hidden behind "ver la comparación de todos modos".
+  2. **Capture, A vs R (exact; Kg ±0.01):** `diferente` (tagged *intercambiado con «X»* / *es el valor de «X» (renglón
+     vecino)* / *un dígito de más o de menos* — neighbours checked in A–Z order and in the export's own order),
+     `no_capturado` (A>0, R blank), `sin_armar` (R>0, A 0 or not assembled — e.g. a reserva row). **Only real
+     mistakes:** a faltante left blank in Retool is fine (Jose, 2026-10-20 — faltantes don't need capturing).
+  3. **Assembly, A vs S:** `asm` when Pz A ≥ `CAPT_PZ_X`·S (5) and ≥ S+`CAPT_PZ_MIN` (10); Kg 3× and +2 kg. Whole
+     boxes reach 3.8× in real data, so normal sobrantes never trip it.
+- Rows listed worst first (🔴, 🟠, ✅). `⬇ CSV` exports every row, each carrying `Hub` and `Pedido` (dd/mm/aaaa) so
+  rows copied or forwarded elsewhere still say where to fix them. Saved to `verificaciones/` (only rows with a
+  finding); Pedidos shows `☑️ Capturado` / `⚠️ Captura con errores (N)` / `⛔ Captura de otro pedido` next to the order
+  badge, and the morning banner counts capturados (`verifSummary`, one `verificaciones/` listing per hub in stage 2).
+- Validated 2026-10-20 on MH Contry 19/10 (fixtures/): 451/451 same order, 152/153 correct, Prispas armado 6 not typed;
+  planted swap / neighbour / ×10 / wrong value / salida on a faltante all caught. Contry's file on the Cumbres card →
+  "⛔ Archivo equivocado … solo 33 de 511 coinciden. Parece ser el archivo de MH Contry (pedido del 19/10)", nothing
+  saved, "Subir otro archivo" re-opens the Cumbres picker. A non-Retool CSV → same warning.
+
 ### 9.11 Offline & service worker
 `sw.js` is **network-first** for same-origin + cdnjs (online always gets the latest deploy; offline falls
 back to cache). Precaches the shell, `imagedb.json`, the manual and PapaParse. Never intercepts `supabase.co`.
@@ -680,9 +709,7 @@ Next (v2.3, being planned):
 - Bigger safety net for assembly saving; cautious order deletes; a coordinator recovery console listing every
   partial and recoverable assembly across hubs and dates (closes §12 items 1–4, 8).
 - UX edits (to be specified).
-- **Retool capture verification** — upload the Retool export after registration and compare `Salida` per SKU
-  against the report to catch misclicks (wrong qty, shifted or swapped rows, typed-but-not-assembled,
-  assembled-but-not-typed). Needs a real export sample in `fixtures/`.
+- ~~Retool capture verification~~ — built (v2.3 Part F, §9.12).
 
 Deferred (v3), with reasoning in `armadoCH-v2-plan.md` §6:
 - Prefilled quantity (only if data shows qty entry is a top-3 time sink).

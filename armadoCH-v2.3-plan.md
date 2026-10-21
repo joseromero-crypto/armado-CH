@@ -438,7 +438,7 @@ With misclicks, rows read like:
 | 3 ✅ built 2026-10-20 (uncommitted) | **B** status + morning banner + historial · resume guard for finished orders · **perf**: request queue (max 8, 429 retry), two-stage load, maintenance once a day — the first build fired ~47 requests per open and Supabase rate-limited them (pages empty) | Didn't need the C4 view: status uses the bucket lists, metrics sidecars (cached) and a `limit=1` picks check; the view waits for Respaldos (Phase 4). Pre-v2.3 multi-day reports are matched through their sidecar's `orderDate` |
 | 4 | **C2/C3/C5** Respaldos panel + upload stop for unfinished orders + Cerrar como terminado | |
 | 5 | **E** careful deletes | |
-| 6 | **F** verificar captura | Can start in parallel with 3–5: it only reads reports |
+| 6 ✅ built 2026-10-20 (uncommitted) | **F** verificar captura | Built ahead of 4–5. Additions over the spec: rows sorted worst-first; a ⛔ file hides its rows; status chip + banner count on Pedidos. **Changed by Jose:** no 🟡 "faltante sin marcar" — only real mistakes; **per-hub cards like Cargar pedidos**, the order cross-check is a wrong-file guard (mismatch → warning + re-upload, never saved) |
 | 7 | **D5/D6** retry chip + local cleanup | |
 
 Each phase: build on localhost with Supabase writes stubbed, ≤3 quick checks, ship when the set works, bump
