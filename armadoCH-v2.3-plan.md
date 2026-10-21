@@ -41,9 +41,11 @@ finish date (D1). Report **columns** stay the same.
   one-tap confirm (E), and nothing may depend on the order CSV still existing.
 - **`pedido_completo/` keeps every day's full order** (42 days for Contry, all 451 rows). → It is the order source
   for Verificar captura (F2), rebuilds and status — not `orders/`.
-- **Leftover partials for finished orders.** Contry still has partial files for 13/10, 08/10 and 14/09-r2, all of
-  which have reports (the clear after the report must have failed or raced). → Status treats **a report as
-  final** regardless of a partial (B1); Phase 1 moves these leftovers into Respaldos as "terminado".
+- **Finished orders get resumed.** Contry had partials for 13/10 and 08/10 whose confirmed products all predate the
+  order's report, but which were re-saved hours later — someone resumed the finished order ("Rangel" at 15:56 on
+  13/10). The 14/09-r2 one is a genuinely unfinished complemento (no R2 report). → A report wins **unless the
+  partial has products confirmed after it** (B1). Phase 1's sweep archives the resumed leftovers; Phase 3 stops the
+  resume itself (C3: don't offer "Continuar" for an order that already has a report and no later work).
 
 ---
 
@@ -94,8 +96,9 @@ Every order file gets one status, computed from what's in the bucket:
 | ☑️ **Capturado** / ⚠️ **Captura con errores (3)** | Retool export verified (F) | `verificaciones/` result |
 | 🔴 **Se perdió el avance — recuperable** | Picks exist, no partial, no report | picks summary view (C4) |
 
-**A report always wins.** If a report exists for the order, the status is ✅ even when a leftover partial file is
-still in the bucket (§0 found three of those for Contry). The order source is `pedido_completo/`, because the
+**A report wins, unless there is later work.** If a report exists, the status is ✅ — unless a partial for the same
+order has products confirmed after the report's time (a real second pass), which shows as 🟡 *Continuado después del
+reporte*. The order source is `pedido_completo/`, because the
 order CSV itself is deleted daily.
 
 Each hub card on **Cargar pedidos** shows its current order and status, plus any **older unfinished order**
@@ -428,7 +431,7 @@ With misclicks, rows read like:
 | Phase | Items | Why |
 |---|---|---|
 | 0 | ~~V1–V3~~ done (§0) | |
-| 1 | **C1** respaldos before every delete (+ move Contry's leftover partials) · **D1** filenames · **D2** r2 helper · **D3** · **D4** `sbReplace` · **D4b** paging | Makes everything undoable, makes "is this finished?" answerable, stops the 1000-row truncation before daily picks pass it |
+| 1 ✅ built 2026-10-20 (uncommitted) | **C1** respaldos before every delete (+ sweep resumed leftovers) · **D1** filenames · **D2** r2 helper · **D3** · **D4** `sbReplace` · **D4b** paging | Makes everything undoable, makes "is this finished?" answerable, stops the 1000-row truncation before daily picks pass it |
 | 2 | **A** coordinator pages | Frame for everything below; pure UI, low risk |
 | 3 | **B** status + morning banner + historial (needs C4 SQL) | |
 | 4 | **C2/C3/C5** Respaldos panel + upload stop for unfinished orders + Cerrar como terminado | |

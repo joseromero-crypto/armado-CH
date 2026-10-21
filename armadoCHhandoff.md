@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-2')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p1')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -85,7 +85,10 @@ Raw `fetch` calls, no supabase-js. Helpers (all near the top of the script):
 | `sbFetch(path)` | `GET …/object/public/{bucket}/{path}` → text | Throws `Error("NNN")` |
 | `sbList(prefix)` | `POST …/object/list/{bucket}`, limit 500, name desc | |
 | `sbDelete(path)` | `DELETE …/object/{bucket}/{path}` (single-object endpoint) | The batch prefixes endpoint does not work for exact paths |
-| `pgInsert(table,row)` / `pgSelect(table,query)` | PostgREST `/rest/v1/{table}` | |
+| `pgInsert(table,row)` / `pgSelect(table,query)` | PostgREST `/rest/v1/{table}` | **Max rows = 1000** per response |
+| `pgSelectAll(table,query)` | pages `pgSelect` (`limit`/`offset`, adds `order=id.asc` if none) | Use for anything day-wide (v2.3) |
+| `sbReplace(path,body,type,{backup})` | upsert; on a 4xx delete-then-insert. `backup` keeps a respaldo of the old file first | For paths that may already exist (v2.3) |
+| `latestOrderFile(files)` | `{date, base, r2, chosen}` — THE rule for a hub's current order | Every caller uses it (v2.3) |
 
 **Storage policies (anon):** INSERT + SELECT + DELETE. **No UPDATE.** Overwriting an existing object with
 upsert is treated as UPDATE and fails, so files rewritten in place use **delete-then-insert**
@@ -98,7 +101,7 @@ upsert is treated as UPDATE and fails, so files rewritten in place use **delete-
 ```sql
 id bigserial pk, fecha date, hub text, ronda int default 1, sku_key text, producto text, unidad text,
 cantidad numeric, senal text /* null|'no_encontrado'|'fecha_corta' */, luz text, seg_busqueda int,
-armador text, order_date /* declared `date` in the v2 plan SQL — see §12 */, ts timestamptz default now()
+armador text, order_date date /* bare date — v2.3 sends bareOrderDate(); `ronda` separates R1/R2 */, ts timestamptz default now()
 ```
 `partial_events` — one row per partial save / clear / restore (`recordPartialEvent`).
 Columns: `hub, order_date, ronda, action ('saved'|'cleared'|'restored'), reason, armador, done, total, device_id, ts`.
@@ -130,8 +133,9 @@ Every path the app reads or writes, who writes it, and how it dies.
 | `inventario_dia/{date}.json` | `mergeInventarioDia` (every upload) | semáforo `loadInvDia`, coordinator conflicts | never (one file per day accumulates) |
 | `partials/{slug}/{orderDate}__{epochMs}_{seq}.json` | `savePartialToSupabase` | `fetchRemotePartial` | `prunePartialVersions` (keeps newest 3), `clearPartialSave` |
 | `partials/{slug}/{orderDate}.json` | nothing (pre-v2.2 legacy) | read as a fallback | `clearPartialSave` |
-| `reports/{slug}/{finishDate}_{HH-MM}_{Armadores}.csv` | `finalizeAssembly` | coordinator lists, registro, 📋 Pedidos armados, `armadoMapForHub` | coordinator 🗑 `deleteReport` |
-| `reports/{slug}/{finishDate}_r2_{HH-MM}_{Armadores}.csv` | same, ronda 2 | same | same |
+| `reports/{slug}/{orderDate}_{finishDate}_{HH-MM}_{Armadores}.csv` | `finalizeAssembly` (v2.3 two-date name) | coordinator lists, registro, 📋 Pedidos armados, `armadoMapForHub` | coordinator 🗑 `deleteReport` (respaldo first) |
+| `reports/{slug}/{orderDate}_r2_{finishDate}_{HH-MM}_{Armadores}.csv` | same, ronda 2 | same | same |
+| `respaldos/{slug}/{orderDate}__{epochMs}__{motivo}.json` | `writeRespaldo` — before every partial clear, order 🗑, report 🗑, same-day overwrite | (Phase 4: Respaldos panel) | `pruneRespaldos` after 30 days |
 | `metrics/{slug}/{report stem}.json` | `uploadMetricsSidecar` | metrics screen | with its report, or 🗑 on the metrics row |
 | `inventario_cierre/{date}.json` | `uploadCierre` | `loadCierre` (newest file) | never |
 | `imagedb/latest.json`, `imagedb/version.txt` | `uploadImageDB` (delete-then-insert) | `loadImageDB` | replaced on upload |
@@ -141,9 +145,10 @@ Every path the app reads or writes, who writes it, and how it dies.
 `{slug}` = `HUB_SLUG[hub]` (`mh-contry`, `mh-cumbres`, `mh-guadalupe`, `mh-san-nicolas`, `mh-avicola`,
 `mh-condesa`, `mh-zapopan`).
 
-> ⚠ **Report filenames carry the date the assembly was _finished_, not the order date.** A 03/09 order
-> finished on 04/09 is `2026-09-04_…csv`. The order date only lives inside the metrics sidecar. Several
-> functions assume the two are equal — see §12.
+> **Report filenames (v2.3):** `{orderDate}_{finishDate}_{HH-MM}_{Armadores}` — the first 10 chars are always the
+> order date, which is what every grouping uses. **Pre-v2.3 names** are `{finishDate}_{HH-MM}_…` (one date): for
+> those the first 10 chars are the finish date, so a legacy multi-day report still groups under the wrong day.
+> `reportDisplayInfo` returns `{dateStr (order), finishDate, label, isR2}` for both formats.
 
 ---
 
@@ -321,7 +326,7 @@ any day can resume it.
   order history, retrying after each. If it still fails, the list shows
   `⚠ Sin respaldo local en este dispositivo`.
 - Remote: **POST a new versioned file** `{orderDate}__{epochMs}_{seq}.json`. Never overwrites, so a remote
-  copy always exists. After a 2xx, `prunePartialVersions` deletes all but the newest **3**.
+  copy always exists. After a 2xx, `prunePartialVersions` deletes all but the newest **5** (`PARTIAL_KEEP_VERSIONS`).
   `_partialSaveSeq` drops a save superseded by a newer save or a clear before it POSTs.
 - The remote write is fire-and-forget with **no retry and no outbox**. A failed write is covered by the
   next save, the local copy, and `picks`.
@@ -332,21 +337,35 @@ newer remote back to local. Remote read = newest versioned file that parses, fal
 then the legacy flat file. Returns `found | none | error`; `error` (couldn't confirm either way) keeps
 Iniciar Armado blocked.
 
-**What deletes a partial** (`clearPartialSave(hub, orderDate, reason)` — removes local key + every remote
-version + the legacy file + logs `cleared`). Exactly these callers:
+**What deletes a partial** — `async clearPartialSave(hub, orderDate, reason, done, total, {payload})` (v2.3):
+1. finds the newest copy (local vs remote by `savedAt`, or `opts.payload`);
+2. **writes it to `respaldos/` first** (motivo from `RESPALDO_MOTIVO`). If that write fails, or the remote state
+   can't be confirmed, it **deletes nothing** and resolves `false`;
+3. then removes the local key + every remote version + the legacy file, and logs `cleared`.
 
-| Trigger | Reason logged |
-|---|---|
-| Report uploaded (`finalizeAssembly`) | `report_uploaded` |
-| Queued report finally lands (`flushOutbox`) | `outbox_report` |
-| `Empezar de cero` → danger modal → confirm | `discard_button` |
-| Coordinator same-day re-upload → `Subir y borrar progreso` | `coordinator_upload` |
-| `newOrder({clearPartial:true})` after a successful upload | (silent re-clear) |
+Exactly these callers:
 
-Nothing else deletes a partial. `newOrder()`, `←`, `saveAndExit`, `startAssembly` all keep it.
+| Trigger | Reason logged | Respaldo motivo | On respaldo failure |
+|---|---|---|---|
+| Report uploaded (`finalizeAssembly`) | `report_uploaded` | `terminado` | partial stays (swept later) |
+| Queued report finally lands (`flushOutbox`) | `outbox_report` | `terminado` | partial stays (swept later) |
+| `Empezar de cero` → danger modal → confirm | `discard_button` | `empezar_de_cero` | toast, card stays, nothing deleted |
+| Coordinator same-day re-upload → `Subir y borrar progreso` | `coordinator_upload` | `subida_coordinador` | toast, upload aborted |
+| Coordinator screen sweep (`sweepLeftoverPartials`) | `leftover_after_report` | `terminado` | stays |
 
-**How long it lives:** remote — indefinitely, until one of the triggers above. Local — indefinitely, old
-dates are never swept.
+Nothing else deletes a partial. `newOrder()` no longer clears anything (v2.3 removed its silent re-clear, which
+could delete without a respaldo); `←`, `saveAndExit`, `startAssembly` keep it.
+
+**Leftover sweep** (once per hub per session, on opening the coordinator): a partial whose order already has a
+report **and** holds no product confirmed after that report's time is archived + deleted. It is judged on the last
+`confirmedAt`, not the save time — see §12 item 11d for why.
+
+**How long it lives:** remote — until one of the triggers above; its last copy then lives 30 days in respaldos.
+Local — indefinitely, old dates are never swept.
+
+**Order and report deletes** (`clearHubOrder`, `deleteReport`) also write a respaldo first (the CSV text; a report
+also carries its metrics sidecar) and refuse to delete if it can't be written. `pruneRespaldos` removes respaldos
+older than `RESPALDO_DAYS` (30) once per hub per session.
 
 **When a partial becomes unreachable without being deleted:**
 - **A newer order date is uploaded for that hub.** The assembler only checks the latest `orderDate`, and the
@@ -406,7 +425,8 @@ report (uploaded or queued), and — independently — one `picks` row per resol
 
 ### 9.1 Time
 - Every date/time goes through `serverNow()` (device clock + skew from Supabase's `Date` header, synced on
-  boot and on return to foreground) and `TZ='America/Monterrey'` formatters (`localDateStr`, `localHM`,
+  boot and on return to foreground; v2.3 — taken from a `HEAD` on `picks`, because `HEAD /rest/v1/` now returns
+  401 with no readable `Date`, which had silently switched the correction off) and `TZ='America/Monterrey'` formatters (`localDateStr`, `localHM`,
   `todayStr`). Fallback: fixed UTC-6. Reason: phones shipped set to UTC+8 were stamping the wrong day.
 - Never use `new Date()` / `toISOString().slice(0,10)` / `toTimeString()` for a stamped date.
 
@@ -561,43 +581,46 @@ Found while reading the code on 2026-10-20. None fixed yet.
 7. The legacy flat partial fallback is still read (the v2.2 plan said to drop it after 30 days).
 
 **Date-equality assumptions (report filename date ≠ order date)**
-8. `hasReportForOrderDate` and `armadoMapForHub` match reports by `name.startsWith(orderDate)`. A report
-   finished on a later day than its order is not found, so:
-   - the 🛟 card / coordinator 🛟 can be offered for an order that **was** finished and reported;
-   - **Revisar** (cierre) can treat an assembled order as unassembled and propose a complemento that
-     double-requests stock; R2's `Armado en la mañana` can come out 0.
-   Fix direction: match on the sidecar's `orderDate`, or put the order date in the report stem (R1's
-   filename is "sacred" — needs Jose's call).
+8. **Fixed for new reports (v2.3 Phase 1):** names now start with the order date (Jose approved the change).
+   Still true for **pre-v2.3** reports finished on a later day than their order: `hasReportForOrderDate` /
+   `armadoMapForHub` match `name.startsWith(orderDate)`, so those old multi-day reports are not found (🛟 can be
+   offered for them; Revisar can over-propose). Ages out with the old files.
 
 **Round-2 inconsistencies**
-9. The coordinator screen sorts order files with `localeCompare`, which puts `2026-09-11.csv` **before**
-   `2026-09-11-r2.csv`. So the coordinator treats the R1 file as "latest" while assemblers load the r2: the
-   badge shows R1, **🗑 deletes the R1 order file** while the r2 stays, and 🛟 never targets ronda 2.
+9. **Fixed (v2.3 Phase 1):** every caller uses `latestOrderFile()`. The coordinator row shows `· 🔄 R2` and a
+   separate `🗑 R1` / `🗑 R2`. (Before: `localeCompare` ranked the R1 file first, so 🗑 deleted R1 while
+   assemblers loaded the r2.)
 10. **Verified 2026-10-20:** `picks.order_date` is a `date` column. `recordPick` sends `S.orderDate`
     (`2026-09-11-r2`); Postgres stores `2026-09-11`, and a query filtering on `…-r2` is coerced the same way and
     matches. So R2 recovery works by accident; `ronda` is what actually separates R1 from R2 picks. Don't rely on
-    the coercion: send/query the bare date + `ronda`.
+    the coercion: send/query the bare date + `ronda`. **Fixed (v2.3 Phase 1):** `recordPick`, recovery queries and
+    `partial_events` send `bareOrderDate()`.
 
 **Overwrite-without-delete**
-11. **Verify:** `doUpload` (same hub, same day — both the order CSV and its `pedido_completo` JSON),
-    `generarComplemento` (second run, same date) and `uploadCierre` (same day) use plain upsert over a path that may exist. With no anon UPDATE policy, that
-    should fail with a 4xx. Either it fails today (re-upload is broken) or the bucket has an UPDATE policy
-    that this file doesn't know about. Test once on a scratch hub.
+11. **Handled (v2.3 Phase 1):** `doUpload` (order CSV + `pedido_completo`), `generarComplemento` and `uploadCierre`
+    use `sbReplace` (upsert, then delete-then-insert on a 4xx; the replaced order is kept as a respaldo). Whether
+    a plain upsert would have failed is still unverified (11e), but the code is now correct either way.
 
 **Row limits**
 11b. **Verified 2026-10-20: max rows = 1000** (`picks` holds 22,256 rows; an unpaged query returns 0–999).
     Daily picks across all hubs ran 442–870 in mid-October (870 on 20/10), so the cap is close. No `pgSelect`
     paginates; day-wide queries will truncate silently: `loadPicks` (self-heals over a few polls, since each poll continues from the last
     `ts`), the `cantidad=gt.0` "positives" queries behind desmentido detection and the faltantes CSV (do **not**
-    self-heal), and any future cross-hub query. Check *API settings → Max rows*.
+    self-heal), and any future cross-hub query. **Fixed (v2.3 Phase 1):** every day-wide picks query uses
+    `pgSelectAll`. Only the `limit=1` existence check stays on `pgSelect`.
 
 **How the bucket is actually used (observed 2026-10-20)**
 11c. **The coordinator deletes each day's order.** Every hub had exactly one file in `orders/` (today's); Condesa
     and Zapopan had none. So order 🗑 is a daily routine, and anything needing an older order must read
     `pedido_completo/` (Contry: 42 days kept), not `orders/`.
-11d. **Leftover partials for finished orders.** `partials/mh-contry/` still held files for 13/10, 08/10 and
-    14/09-r2 — orders that have reports. The fire-and-forget clear after a report doesn't always land (or a
-    save races it). Treat a report as final; leftovers are harmless today but confuse any "in progress" status.
+11d. **Finished orders get resumed (resurrected partials).** `partials/mh-contry/` held files for 13/10 and 08/10
+    whose every confirmed product predates the order's report (last confirm 12:57 vs report 13:27; 9:56 vs 10:36),
+    but were **saved hours after** the report: the 13/10 one shows a new segment by "Rangel" at 15:56. Someone
+    resumed an already-finished order — a stale local or remote copy offered the "Continuar" card — and
+    `resumePartialSave` re-saved it at once. The sweep now archives these (judged on last `confirmedAt`).
+    **Root cause still open:** `checkForPartialSave` doesn't check whether the order already has a report, so
+    an assembler can still resume a finished order until the coordinator screen sweeps it (v2.3 plan Phase 3).
+    The 14/09-r2 partial is different: a complemento with no R2 report — genuinely unfinished.
 11e. Re-upload overwrite (item 11) is still unverified: no order file shows `updated_at > created_at`, so no
     same-day overwrite has ever succeeded — or none was tried.
 

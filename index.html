@@ -760,8 +760,10 @@ function skewMinutes(){ return Math.round(_skewMs/60000); }
 async function syncClock(){
   try{
     const t0=Date.now();
-    const r=await fetch(`${SB_URL}/rest/v1/`,{method:'HEAD',headers:{'apikey':SB_KEY}});
-    const h=r.headers.get('Date'); // header CORS-safelisted: siempre legible
+    // v2.3 — la raíz /rest/v1/ ahora responde 401 sin un Date legible (verificado 2026-10-20), así que la
+    // corrección de reloj estaba apagada en silencio. Un HEAD sobre una tabla con anon SELECT sí lo expone.
+    const r=await fetch(`${SB_URL}/rest/v1/picks?select=id&limit=1`,{method:'HEAD',headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}});
+    const h=r.headers.get('Date');
     if(h){
       const srv=Date.parse(h);
       if(!isNaN(srv)){ _skewMs=srv+Math.round((Date.now()-t0)/2)-Date.now(); _skewKnown=true; }
@@ -837,6 +839,35 @@ async function pgSelect(table, query){
   if(!r.ok) throw new Error(`${r.status}`);
   return r.json();
 }
+// v2.3/D4b — the project caps every PostgREST response at 1000 rows (verified 2026-10-20), and a day's picks
+// already reach ~870. Page anything day-wide so it can't truncate silently. A page shorter than PG_PAGE ends it.
+const PG_PAGE=1000;
+async function pgSelectAll(table, query){
+  const q=/(^|&)order=/.test(query)?query:query+'&order=id.asc'; // stable order, or offsets can skip/repeat rows
+  let out=[];
+  for(let off=0;;off+=PG_PAGE){
+    const rows=await pgSelect(table, `${q}&limit=${PG_PAGE}&offset=${off}`);
+    out=out.concat(rows);
+    if(rows.length<PG_PAGE) return out;
+  }
+}
+// v2.3/D3 — picks.order_date is a `date` column: "2026-09-11-r2" only matched because Postgres coerced it.
+// Always send/query the bare date; `ronda` is what separates round 1 from round 2.
+function bareOrderDate(od){ return String(od||'').replace(/-r2$/,''); }
+
+// v2.3/D4 — overwrite a file that may already exist. The bucket has no anon UPDATE policy, so a plain upsert over
+// an existing object can 4xx; fall back to delete-then-insert. opts.backup = {hub, kind, orderDate, motivo} keeps
+// a respaldo of the old content first (and aborts if that can't be written).
+async function sbReplace(path, body, contentType='text/csv', opts={}){
+  try{ await sbUpload(path, body, contentType); return; }
+  catch(e){ if(isNetErr(e)) throw e; }
+  if(opts.backup){
+    let old=null; try{ old=await sbFetch(path); }catch(_){}
+    if(old!=null) await writeRespaldo(opts.backup.hub, { ...opts.backup, path, payload:old });
+  }
+  await sbDelete(path).catch(()=>{});
+  await sbUpload(path, body, contentType);
+}
 
 /* ── OFFLINE OUTBOX (§3.6) — reports / metrics / picks queue; nothing is lost in a dead zone ── */
 const OUTBOX_KEY='calii_outbox';
@@ -850,11 +881,16 @@ function outboxAdd(entry){
   outboxWrite(a);
 }
 // Try the upload now; on a network failure enqueue and resolve 'queued'; a real 4xx rejects.
+// meta.replace → the path may already exist (same-day re-upload): overwrite via sbReplace, now and on flush.
 async function sbUploadQueued(path, body, meta={}){
-  try{ await sbUpload(path, body, meta.contentType||'text/csv'); return 'uploaded'; }
+  try{
+    if(meta.replace) await sbReplace(path, body, meta.contentType||'text/csv');
+    else await sbUpload(path, body, meta.contentType||'text/csv');
+    return 'uploaded';
+  }
   catch(e){
     if(!isNetErr(e)) throw e;
-    outboxAdd({ kind:meta.kind||'report', path, body, contentType:meta.contentType||'text/csv',
+    outboxAdd({ kind:meta.kind||'report', path, body, contentType:meta.contentType||'text/csv', replace:!!meta.replace,
       hub:meta.hub||'', orderDate:meta.orderDate||'', lastError:String(e.message||e) });
     return 'queued';
   }
@@ -871,6 +907,7 @@ async function flushOutbox(manual){
       if(e.kind==='pick') await pgInsert('picks', JSON.parse(e.body));
       else if(e.kind==='partial_event') await pgInsert('partial_events', JSON.parse(e.body)); // v2.2/F10
       else if(e.kind==='inventario_dia'){ await sbDelete(e.path).catch(()=>{}); await sbUpload(e.path, e.body, e.contentType||'application/json'); } // delete-then-insert (no anon UPDATE)
+      else if(e.replace) await sbReplace(e.path, e.body, e.contentType||'text/csv');
       else await sbUpload(e.path, e.body, e.contentType||'text/csv');
       sent++;
       if(e.kind==='report' && e.hub && e.orderDate) clearPartialSave(e.hub, e.orderDate, 'outbox_report'); // now safe
@@ -1298,6 +1335,17 @@ function pickHub(btn, name){
   fetchOrderForHub(name);
 }
 
+// v2.3/D2 — the ONE rule for "this hub's current order", shared by assemblers and coordinator. localeCompare
+// sorts "2026-09-11.csv" before "2026-09-11-r2.csv", which once made the coordinator treat R1 as latest while
+// assemblers loaded the r2. Returns {date, base, r2, chosen} (file objects from sbList), or null.
+function latestOrderFile(files){
+  const csv=(files||[]).filter(f=>f.name&&f.name.endsWith('.csv'));
+  if(!csv.length) return null;
+  const date=csv.map(f=>f.name.replace(/(-r2)?\.csv$/,'')).sort().pop();
+  const base=csv.find(f=>f.name===`${date}.csv`)||null, r2=csv.find(f=>f.name===`${date}-r2.csv`)||null;
+  return {date, base, r2, chosen:r2||base};
+}
+
 async function fetchOrderForHub(hub){
   const st=document.getElementById('fetch-status');
   st.className='fetch-status loading'; st.textContent='⏳ Buscando pedido…';
@@ -1305,14 +1353,9 @@ async function fetchOrderForHub(hub){
   document.querySelectorAll('#hub-grid .hub-btn').forEach(b=>b.disabled=true);
   try{
     // Latest DATE, then prefer that date's complemento (-r2) over the base order (§3.5)
-    const files=await sbList(`orders/${HUB_SLUG[hub]}/`);
-    const csvFiles=files.filter(f=>f.name&&f.name.endsWith('.csv'));
-    if(!csvFiles.length) throw new Error('sin pedido');
-    const latestDate=csvFiles.map(f=>f.name.replace(/(-r2)?\.csv$/,'')).sort().pop();
-    const r2File=csvFiles.find(f=>f.name===`${latestDate}-r2.csv`);
-    const baseFile=csvFiles.find(f=>f.name===`${latestDate}.csv`);
-    const chosen=r2File||baseFile||csvFiles.sort((a,b)=>b.name.localeCompare(a.name))[0];
-    const isR2=!!r2File;
+    const lo=latestOrderFile(await sbList(`orders/${HUB_SLUG[hub]}/`));
+    if(!lo) throw new Error('sin pedido');
+    const latestDate=lo.date, chosen=lo.chosen, isR2=!!lo.r2;
     const uploadDate=chosen.name.replace('.csv','');
     const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${chosen.name}`);
     const parsed=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
@@ -1422,49 +1465,51 @@ async function loadCoordinatorScreen(){
         sbList(`reports/${HUB_SLUG[hub]}/`),
         sbList(`partials/${HUB_SLUG[hub]}/`).catch(()=>[]) // v2.2/F5
       ]);
-      const csvOrders=orderFiles.filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name));
-      const latestOrder=csvOrders[0]||null;
-      const cutoffDate=latestOrder?.name?.replace('.csv','')||null;
+      // v2.3/D2 — same "current order" rule assemblers use. cutoffDate is the bare date (report names start with
+      // it); currentOd is what assemblers load and the partial's identity (carries -r2 for a complemento).
+      const lo=latestOrderFile(orderFiles);
+      const latestOrder=lo?lo.chosen:null;
+      const cutoffDate=lo?lo.date:null;
+      const currentOd=lo?(lo.r2?`${lo.date}-r2`:lo.date):null;
       const validReports=reportFiles.filter(f=>f.name&&f.name.endsWith('.csv'));
       const activeReports=cutoffDate ? validReports.filter(f=>f.name.slice(0,10)>=cutoffDate) : [];
       const archiveReports=cutoffDate ? validReports.filter(f=>f.name.slice(0,10)<cutoffDate) : validReports;
       // v2.2/F5 — offer recovery only when this exact order has no partial and no report yet, but does have picks.
-      // Checked directly against validReports (already fetched) rather than activeReports, whose
-      // filename-date comparison isn't r2-safe (cutoffDate carries a -r2 suffix that never compares
-      // >= against a plain 10-char report date).
       let canRecover=false, recoverRonda=1;
-      if(cutoffDate){
-        recoverRonda=cutoffDate.endsWith('-r2')?2:1;
-        const baseDate=cutoffDate.replace(/-r2$/,'');
+      if(lo){
+        recoverRonda=lo.r2?2:1;
         const hasReport=recoverRonda===2
-          ? validReports.some(f=>f.name.startsWith(baseDate)&&/_r2_/.test(f.name))
-          : validReports.some(f=>f.name.startsWith(baseDate)&&!/_r2_/.test(f.name));
-        const hasPartial=(partialFiles||[]).some(f=>isPartialFileForDate(f.name, cutoffDate));
+          ? validReports.some(f=>f.name.startsWith(cutoffDate)&&/_r2_/.test(f.name))
+          : validReports.some(f=>f.name.startsWith(cutoffDate)&&!/_r2_/.test(f.name));
+        const hasPartial=(partialFiles||[]).some(f=>isPartialFileForDate(f.name, currentOd));
         if(!hasPartial && !hasReport){
           try{ canRecover=(await pgSelect('picks', `hub=eq.${encodeURIComponent(hub)}&order_date=eq.${encodeURIComponent(cutoffDate)}&ronda=eq.${recoverRonda}&select=sku_key&limit=1`)).length>0; }catch(_){}
         }
       }
-      return {hub, latestOrder, cutoffDate, activeReports, archiveReports, canRecover, recoverRonda};
-    }catch(e){ return {hub, latestOrder:null, cutoffDate:null, activeReports:[], archiveReports:[], canRecover:false, recoverRonda:1}; }
+      sweepLeftoverPartials(hub, partialFiles||[], validReports).catch(e=>console.warn('sweep partials:',e)); // v2.3/C1
+      pruneRespaldos(hub).catch(()=>{}); // v2.3/C1 — 30-day retention
+      return {hub, lo, latestOrder, cutoffDate, currentOd, activeReports, archiveReports, canRecover, recoverRonda};
+    }catch(e){ return {hub, lo:null, latestOrder:null, cutoffDate:null, currentOd:null, activeReports:[], archiveReports:[], canRecover:false, recoverRonda:1}; }
   }));
 
   // Render hub rows
-  document.getElementById('coord-hub-list').innerHTML=hubData.map(({hub,latestOrder,cutoffDate,canRecover,recoverRonda})=>{
-    const loaded=!!latestOrder;
-    const dateLabel=latestOrder?.name?.replace('.csv','')||'';
-    const orderFilePath=latestOrder?`orders/${HUB_SLUG[hub]}/${latestOrder.name}`:'';
-    const clearBtn=loaded?`<button class="coord-del-btn" onclick="clearHubOrder('${escH(orderFilePath)}','${escH(hub)}','${escH(dateLabel)}')" title="Eliminar pedido cargado">🗑</button>`:'';
-    const noSurtidoBtn=loaded?`<button class="coord-nosurt-btn" onclick="downloadNoSurtido('${escH(hub)}','${escH(dateLabel.replace('-r2',''))}')" title="Descargar SKUs no surtidos (reserva)">📄 No surtido</button>`:'';
-    const recoverBtn=canRecover?`<button class="coord-del-btn" onclick="coordRecoverPartial('${escH(hub)}','${escH(cutoffDate)}',${recoverRonda})" title="Reconstruir el progreso perdido desde el historial de picks">🛟 Recuperar</button>`:'';
+  document.getElementById('coord-hub-list').innerHTML=hubData.map(({hub,lo,cutoffDate,currentOd,canRecover,recoverRonda})=>{
+    const loaded=!!lo;
+    const dateLabel=cutoffDate||'';
+    const delBtn=(f,label,title)=>`<button class="coord-del-btn" onclick="clearHubOrder('${escH(`orders/${HUB_SLUG[hub]}/${f.name}`)}','${escH(hub)}','${escH(label)}')" title="${title}">🗑${lo&&lo.r2&&lo.base?(f===lo.r2?' R2':' R1'):''}</button>`;
+    // v2.3/D2 — with a complemento, each file gets its own 🗑 (the old single 🗑 deleted R1 while assemblers loaded R2)
+    const clearBtn=!loaded?'':[lo.base?delBtn(lo.base, dateLabel, 'Eliminar pedido cargado'):'', lo.r2?delBtn(lo.r2, `${dateLabel} (complemento)`, 'Eliminar complemento'):''].join('');
+    const noSurtidoBtn=loaded?`<button class="coord-nosurt-btn" onclick="downloadNoSurtido('${escH(hub)}','${escH(dateLabel)}')" title="Descargar SKUs no surtidos (reserva)">📄 No surtido</button>`:'';
+    const recoverBtn=canRecover?`<button class="coord-del-btn" onclick="coordRecoverPartial('${escH(hub)}','${escH(currentOd)}',${recoverRonda})" title="Reconstruir el progreso perdido desde el historial de picks">🛟 Recuperar</button>`:'';
     // counts remembered from this device's last upload (falls back to the date alone)
     let sub='';
     try{ const c=JSON.parse(localStorage.getItem('calii_ordercount_'+HUB_SLUG[hub])||'null'); if(c&&c.date===dateLabel) sub=` · ${c.activos} activos${c.reserva?` · ${c.reserva} reserva`:''}`; }catch(_){}
     // §4 — amber the badge when this hub's latest order isn't today's (coordinator didn't upload for it today)
-    const stale = loaded && dateLabel.slice(0,10) !== todayStr();
+    const stale = loaded && dateLabel !== todayStr();
     const badgeCls = !loaded ? 'empty' : (stale ? 'stale' : 'loaded');
     return `<div class="coord-hub-row">
       <span class="coord-hub-name">${escH(hub)}${sub?`<span class="coord-hub-sub">${escH(sub)}</span>`:''}</span>
-      <span class="coord-hub-badge ${badgeCls}" id="badge-${HUB_SLUG[hub]}">${loaded?`${stale?'⚠':'✓'} ${escH(dateLabel)}`:'Sin pedido'}</span>
+      <span class="coord-hub-badge ${badgeCls}" id="badge-${HUB_SLUG[hub]}">${loaded?`${stale?'⚠':'✓'} ${escH(dateLabel)}${lo.r2?' · 🔄 R2':''}`:'Sin pedido'}</span>
       <label class="coord-upload-btn">Subir CSV<input type="file" accept=".csv" onchange="uploadHubCSV(this,'${escH(hub)}')"></label>
       ${noSurtidoBtn}${recoverBtn}${clearBtn}
     </div>`;
@@ -1506,12 +1551,16 @@ async function loadCoordinatorScreen(){
   ).sort((a,b)=>b.name.localeCompare(a.name));
 }
 
+// dateStr = the ORDER date (first 10 chars, every format). finishDate = the day it was finished: the second date
+// in a v2.3 name, or dateStr for a pre-v2.3 name (which only ever carried the finish date).
 function reportDisplayInfo(name){
   const base=name.replace('.csv','');
   const dateStr=base.slice(0,10);
   let suffix=base.length>10 ? base.slice(11) : '';
   const isR2=/^r2_/.test(suffix);
   if(isR2) suffix=suffix.slice(3);
+  let finishDate=dateStr;
+  if(/^\d{4}-\d{2}-\d{2}(_|$)/.test(suffix)){ finishDate=suffix.slice(0,10); suffix=suffix.slice(11); } // v2.3/D1
   const r2Tag=isR2?'🔄 Complemento · ':'';
   let label;
   if(!suffix) label='Armado 1';
@@ -1524,7 +1573,9 @@ function reportDisplayInfo(name){
   }
   else if(/^\d+$/.test(suffix)) label=`Armado ${suffix}`;
   else label=suffix.replace(/_/g,' ');
-  return {label:r2Tag+label, dateStr, isR2};
+  // A multi-day order says when it was actually finished
+  const finTag=finishDate!==dateStr?` · terminado ${finishDate.slice(8,10)}/${finishDate.slice(5,7)}`:'';
+  return {label:r2Tag+label+finTag, dateStr, finishDate, isR2};
 }
 
 let _archiveOpen=false;
@@ -1600,11 +1651,12 @@ async function uploadHubCSV(input, hub){
 async function doUpload(hub, text, items, badge, fields){
   if(badge){ badge.className='coord-hub-badge uploading'; badge.textContent='Subiendo…'; }
   try{
-    await sbUpload(orderPath(hub), text);
-    // §3.5: keep the FULL request (activos + reserva) verbatim for the round-2 cross-check
     const od=todayStr();
+    // v2.3/D4 — a same-day re-upload overwrites; the replaced file is kept as a respaldo first
+    await sbReplace(orderPath(hub), text, 'text/csv', {backup:{hub, kind:'order', orderDate:od, motivo:'pedido_reemplazado'}});
+    // §3.5: keep the FULL request (activos + reserva) verbatim for the round-2 cross-check
     const pcBody=JSON.stringify({orderDate:od, hub, uploadedAt:serverNow().toISOString(), fields:fields||[], rows:items});
-    sbUploadQueued(`pedido_completo/${HUB_SLUG[hub]}/${od}.json`, pcBody, {kind:'pedido_completo', contentType:'application/json'})
+    sbUploadQueued(`pedido_completo/${HUB_SLUG[hub]}/${od}.json`, pcBody, {kind:'pedido_completo', contentType:'application/json', replace:true})
       .catch(e=>console.warn('pedido_completo:',e));
     // §2 — merge this hub's rows into today's shared inventory baseline (most-recent-upload-wins per SKU)
     mergeInventarioDia(hub, items).catch(e=>console.warn('inventario_dia:',e));
@@ -1675,7 +1727,12 @@ async function checkPartialThenUpload(hub, text, items, badge, fields){
       `Hay ${done} de ${total} productos armados por ${workerStr} contra el pedido del ${od}.\n\nSi subes este archivo y borras el progreso, hay que armar el pedido completo otra vez.`,
       'Subir y borrar progreso',
       'm-danger',
-      async ()=>{ clearPartialSave(hub, od, 'coordinator_upload', done, total); await doUpload(hub, text, items, badge, fields); },
+      async ()=>{
+        if(!(await clearPartialSave(hub, od, 'coordinator_upload', done, total, {payload:partial}))){ // v2.3/C1
+          toast('❌ No se pudo guardar el respaldo del avance — no se subió nada. Intenta de nuevo.', 4000); return;
+        }
+        await doUpload(hub, text, items, badge, fields);
+      },
       { label:'Subir sin borrar el progreso', onExtra:()=>doUpload(hub, text, items, badge, fields) } // F9c
     );
     return;
@@ -1686,11 +1743,17 @@ async function checkPartialThenUpload(hub, text, items, badge, fields){
 function clearHubOrder(path, hub, dateLabel){
   showModal(
     '¿Eliminar pedido cargado?',
-    `Se eliminará el pedido del ${dateLabel} para ${hub}.\n\nLos armadores ya no podrán acceder a él. Esta acción no se puede deshacer.`,
+    `Se eliminará el pedido del ${dateLabel} para ${hub}.\n\nLos armadores ya no podrán acceder a él. Se guarda un respaldo por ${RESPALDO_DAYS} días.`,
     'Eliminar',
     'm-danger',
     async ()=>{
-      try{ await sbDelete(path); toast(`✓ Pedido de ${hub} eliminado`); loadCoordinatorScreen(); }
+      // v2.3/C1 — the order CSV goes to respaldos first; no copy → no delete
+      try{
+        const csv=await sbFetch(path);
+        const od=path.split('/').pop().replace(/\.csv$/,'');
+        await writeRespaldo(hub, {kind:'order', orderDate:od, motivo:'pedido_borrado', path, payload:csv});
+      }catch(e){ toast('❌ No se pudo guardar el respaldo — el pedido NO se borró.', 4000); return; }
+      try{ await sbDelete(path); toast(`✓ Pedido de ${hub} eliminado · respaldo por ${RESPALDO_DAYS} días`); loadCoordinatorScreen(); }
       catch(e){ toast('❌ Error al eliminar: '+e.message); }
     }
   );
@@ -1714,10 +1777,17 @@ function metricsPathForReport(reportPath){ return reportPath.replace(/^reports\/
 function deleteReport(path, hub, label){
   showModal(
     '¿Eliminar reporte?',
-    `Se eliminará permanentemente el reporte "${label}" de ${hub} y sus métricas.\n\nEsta acción no se puede deshacer.`,
+    `Se eliminará el reporte "${label}" de ${hub} y sus métricas.\n\nSe guarda un respaldo por ${RESPALDO_DAYS} días.`,
     'Eliminar',
     'm-danger',
     async ()=>{
+      // v2.3/C1 — report (+ its metrics sidecar) goes to respaldos first; no copy → no delete
+      try{
+        const csv=await sbFetch(path);
+        let metrics=null; try{ metrics=JSON.parse(await sbFetch(metricsPathForReport(path))); }catch(_){}
+        const name=path.split('/').pop();
+        await writeRespaldo(hub, {kind:'report', orderDate:reportDisplayInfo(name).dateStr+(/_r2_/.test(name)?'-r2':''), motivo:'reporte_borrado', path, payload:{csv, metrics}});
+      }catch(e){ toast('❌ No se pudo guardar el respaldo — el reporte NO se borró.', 4000); return; }
       try{
         await sbDelete(path);
         sbDelete(metricsPathForReport(path)).catch(()=>{}); // sidecar — ignore if missing
@@ -1884,13 +1954,17 @@ function getAssemblersSlug(results, fallback=''){
 
 /* ── REPORT PATH (timestamp-based, sync) ── */
 // assemblerSlug is already-slugified (output of getAssemblersSlug) — no internal slugify applied
-// ronda 2 → reports/{slug}/{date}_r2_{HH-MM}_{Armadores}.csv (§3.5) — R1's path is unchanged
-function getReportPath(hub, assemblerSlug='', ronda=1){
+// v2.3/D1 — the name carries BOTH dates: the order it belongs to, then the day it was finished (orders can take
+// more than one day). reports/{slug}/{orderDate}_{finishDate}_{HH-MM}_{Armadores}.csv; ronda 2 inserts r2_ after
+// the order date. Everything that groups reports by order reads the first 10 chars. Pre-v2.3 names carry only
+// the finish date — reportDisplayInfo still reads them.
+function getReportPath(hub, assemblerSlug='', ronda=1, orderDate=''){
   const t=serverNow(), d=localDateStr(t), hm=localHM(t).replace(':','-');
+  const od=bareOrderDate(orderDate)||d;
   const aslug=assemblerSlug?'_'+assemblerSlug:'';
   const rTag=ronda===2?'r2_':'';
-  const suffix=`_${rTag}${hm}${aslug}`;
-  return {path:`reports/${HUB_SLUG[hub]}/${d}${suffix}.csv`, suffix};
+  const suffix=`_${rTag}${d}_${hm}${aslug}`;
+  return {path:`reports/${HUB_SLUG[hub]}/${od}${suffix}.csv`, suffix};
 }
 
 /* ── START ── */
@@ -2426,7 +2500,7 @@ function showSummary(){
   );
 
   const aslug=getAssemblersSlug(results, assembler);
-  const {path, suffix}=getReportPath(hub, aslug, ronda);
+  const {path, suffix}=getReportPath(hub, aslug, ronda, orderDate);
   const {csv}=generateCSV(items, results, hub, assembler, suffix, {ronda, r1Armado});
   // Part B — built from the live S.items/S.results arrays directly, never from a sorted/filtered
   // display copy, so the summary's sort and filter (renderSummaryList) can never move what uploads.
@@ -2487,7 +2561,7 @@ async function loadPedidosArmados(){
   await Promise.all(HUBS.map(async hub=>{
     try{
       const [orderFiles, reportFiles]=await Promise.all([ sbList(`orders/${HUB_SLUG[hub]}/`), sbList(`reports/${HUB_SLUG[hub]}/`) ]);
-      const cutoff=orderFiles.filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name))[0]?.name?.replace('.csv','');
+      const cutoff=latestOrderFile(orderFiles)?.date; // v2.3/D2 — bare date; reports for this order start with it
       if(!cutoff) return; // no order in the bucket for this hub → nothing to show
       reportFiles.filter(f=>f.name&&f.name.endsWith('.csv')&&f.name.slice(0,10)>=cutoff)
         .forEach(f=>entries.push({hub, path:`reports/${HUB_SLUG[hub]}/${f.name}`, name:f.name}));
@@ -2580,7 +2654,7 @@ function finalizeAssembly(){
     }
     _pendingReport=null;
     finishBtn.textContent='Listo →';
-    finishBtn.onclick=()=>newOrder(outcome==='uploaded'?{clearPartial:true}:undefined);
+    finishBtn.onclick=()=>newOrder();
     finishBtn.disabled=false;
   }
   attemptUpload();
@@ -3029,7 +3103,7 @@ async function loadPicks(){
   const day=todayStr();
   S._picks=[]; S._picksMaxTs=''; S._picksDay=day;
   try{
-    const rows=await pgSelect('picks', `fecha=eq.${day}&ronda=eq.${S.ronda}&order=ts.asc&select=${PICK_SELECT}`);
+    const rows=await pgSelectAll('picks', `fecha=eq.${day}&ronda=eq.${S.ronda}&order=ts.asc&select=${PICK_SELECT}`); // v2.3/D4b
     S._picks=rows;
     S._picksMaxTs=rows.length?rows[rows.length-1].ts:'';
     S._picksReachable=true;
@@ -3053,7 +3127,7 @@ async function pollPicks(){
     const q = S._picksMaxTs
       ? `fecha=eq.${todayStr()}&ronda=eq.${S.ronda}&ts=gte.${encodeURIComponent(S._picksMaxTs)}&order=ts.asc&select=${PICK_SELECT}`
       : `fecha=eq.${todayStr()}&ronda=eq.${S.ronda}&order=ts.asc&select=${PICK_SELECT}`;
-    const rows=await pgSelect('picks', q);
+    const rows=await pgSelectAll('picks', q); // v2.3/D4b
     if(rows.length){
       const seen=new Set(S._picks.map(p=>p.id));
       for(const row of rows){ if(!seen.has(row.id)){ S._picks.push(row); seen.add(row.id); } }
@@ -3211,7 +3285,7 @@ function recordPick(idx){
     cantidad:Number(r.picked)||0, senal,
     luz:r.luzAlSkip||'sin_dato',
     seg_busqueda:(typeof r.handleSec==='number')?r.handleSec:null,
-    armador:S.assembler||null, order_date:S.orderDate||null
+    armador:S.assembler||null, order_date:bareOrderDate(S.orderDate)||null // v2.3/D3 — bare date; ronda carries R1/R2
   };
   pgInsert('picks', row).catch(e=>{
     if(isNetErr(e)){ outboxAdd({kind:'pick', body:JSON.stringify(row)}); startOutboxTimer(); }
@@ -3223,7 +3297,7 @@ function recordPick(idx){
 // instead of the ranked-guesswork §3 had to fall back to. Fire-and-forget through the existing outbox.
 function recordPartialEvent(hub, orderDate, ronda, action, reason, done, total){
   const row={
-    hub, order_date:orderDate||null, ronda:ronda||1, action, reason:reason||null,
+    hub, order_date:bareOrderDate(orderDate)||null, ronda:ronda||(/-r2$/.test(orderDate||'')?2:1), action, reason:reason||null, // v2.3/D3
     armador:S.assembler||null, done:(done!=null?done:null), total:(total!=null?total:null),
     device_id:getDeviceId(), ts:serverNow().toISOString()
   };
@@ -3295,12 +3369,12 @@ async function loadInvToday(){
   // 1. Every hub's current order → demand per SKU (aggregated within unit)
   const perHubOrders=await Promise.all(HUBS.map(async hub=>{
     try{
-      const files=(await sbList(`orders/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name));
-      if(!files.length) return {hub, rows:[], date:''};
-      const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${files[0].name}`);
+      const lo=latestOrderFile(await sbList(`orders/${HUB_SLUG[hub]}/`)); // v2.3/D2 — what assemblers are working from
+      if(!lo) return {hub, rows:[], date:''};
+      const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${lo.chosen.name}`);
       const parsed=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
       const rows=parsed.data.filter(r=>{ const q=parseFloat(r['Solicitud (kg/pz)']); return !isNaN(q)&&q>0; });
-      return {hub, rows, date:files[0].name.replace('.csv','')};
+      return {hub, rows, date:lo.chosen.name.replace('.csv','')};
     }catch(_){ return {hub, rows:[], date:''}; }
   }));
 
@@ -3333,11 +3407,11 @@ async function loadInvToday(){
   // 2. Today's faltantes from the picks table
   let faltRows=[];
   try{
-    faltRows=await pgSelect('picks', `fecha=eq.${todayStr()}&senal=not.is.null&select=hub,sku_key,producto,unidad,cantidad,senal,armador`);
+    faltRows=await pgSelectAll('picks', `fecha=eq.${todayStr()}&senal=not.is.null&select=hub,sku_key,producto,unidad,cantidad,senal,armador`);
   }catch(_){ faltRows=null; }
   let positives=[];
   try{
-    positives=await pgSelect('picks', `fecha=eq.${todayStr()}&cantidad=gt.0&select=sku_key,armador,hub`);
+    positives=await pgSelectAll('picks', `fecha=eq.${todayStr()}&cantidad=gt.0&select=sku_key,armador,hub`);
   }catch(_){ positives=[]; }
   const positiveByKey={};
   (positives||[]).forEach(p=>{ (positiveByKey[p.sku_key]=positiveByKey[p.sku_key]||new Set()).add(p.armador+'|'+p.hub); });
@@ -3395,12 +3469,12 @@ async function downloadFaltantesDelDia(){
   const date=todayStr();
   let falt;
   try{
-    falt=await pgSelect('picks', `fecha=eq.${date}&senal=not.is.null&order=ts.asc&select=hub,sku_key,producto,unidad,senal,armador,ts`);
+    falt=await pgSelectAll('picks', `fecha=eq.${date}&senal=not.is.null&order=ts.asc&select=hub,sku_key,producto,unidad,senal,armador,ts`);
   }catch(e){ toast('❌ Tabla de picks inalcanzable'); return; }
   if(!falt||!falt.length){ toast('Sin faltantes registrados hoy'); return; }
 
   let positives=[];
-  try{ positives=await pgSelect('picks', `fecha=eq.${date}&cantidad=gt.0&select=sku_key,armador`); }catch(_){ positives=[]; }
+  try{ positives=await pgSelectAll('picks', `fecha=eq.${date}&cantidad=gt.0&select=sku_key,armador`); }catch(_){ positives=[]; }
   const posArmadores={};
   (positives||[]).forEach(p=>{ (posArmadores[p.sku_key]=posArmadores[p.sku_key]||new Set()).add(p.armador||''); });
 
@@ -3418,9 +3492,9 @@ async function downloadFaltantesDelDia(){
   const lookup={};
   await Promise.all(HUBS.map(async hub=>{
     try{
-      const files=(await sbList(`orders/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')).sort((a,b)=>b.name.localeCompare(a.name));
-      if(!files.length) return;
-      const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${files[0].name}`);
+      const lo=latestOrderFile(await sbList(`orders/${HUB_SLUG[hub]}/`)); // v2.3/D2 — R1 file: original positions + solicitado
+      if(!lo) return;
+      const csv=await sbFetch(`orders/${HUB_SLUG[hub]}/${(lo.base||lo.chosen).name}`);
       const parsed=Papa.parse(csv,{header:true,dynamicTyping:false,skipEmptyLines:true});
       const byKey=(lookup[hub]={});
       parsed.data.forEach(item=>{
@@ -3532,8 +3606,8 @@ async function uploadCierre(input){
     const rows=cierreReduce(text);
     if(!rows.length) throw new Error('sin filas válidas (falta la columna "Final [AUTO]"?)');
     const od=todayStr();
-    await sbUpload(`inventario_cierre/${od}.json`,
-      JSON.stringify({uploadedAt:serverNow().toISOString(), count:rows.length, rows}), 'application/json');
+    await sbReplace(`inventario_cierre/${od}.json`,
+      JSON.stringify({uploadedAt:serverNow().toISOString(), count:rows.length, rows}), 'application/json'); // v2.3/D4 — same-day re-upload
     _cierreCache=null;
     st.textContent=`✓ ${rows.length} SKUs · ${serverNow().toLocaleString('es-MX',{timeZone:TZ,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`;
     toast(`✓ Inventario de cierre cargado (${rows.length} SKUs)`);
@@ -3710,7 +3784,8 @@ async function generarComplemento(hub, silent){
   const rows=h.candidates.map(c=>({...c.srcRow, 'Solicitud (kg/pz)':String(c.pendiente)}));
   const csv=Papa.unparse({fields, data:rows});
   try{
-    await sbUpload(`orders/${HUB_SLUG[hub]}/${h.orderDate}-r2.csv`, csv);
+    await sbReplace(`orders/${HUB_SLUG[hub]}/${h.orderDate}-r2.csv`, csv, 'text/csv', // v2.3/D4 — a second run for the same date
+      {backup:{hub, kind:'order', orderDate:`${h.orderDate}-r2`, motivo:'pedido_reemplazado'}});
     if(!silent){ toast(`✓ Complemento de ${hub} — ${rows.length} SKUs`); revisarCierre(); }
     return true;
   }catch(e){ if(!silent) toast('❌ Error al generar: '+e.message); return false; }
@@ -3891,10 +3966,10 @@ function exitKeepingPartial(){
 /* ── NEW ORDER ── */
 // v2.2/F2 — destructive by exception, not by default. newOrder() always keeps the partial; only the
 // post-report call site (finalizeAssembly, once the report has actually landed) passes clearPartial.
-function newOrder(opts){
-  const clearPartial=!!(opts&&opts.clearPartial===true);
-  const _hub=S.hub, _orderDate=S.orderDate;
-  if(_hub && clearPartial) clearPartialSave(_hub, _orderDate, null, null, null, {silent:true}); // already logged by finalizeAssembly
+// v2.3/C1 — never clears anything. The post-report clear lives in finalizeAssembly (archive-first); a clear that
+// didn't land leaves a leftover that sweepLeftoverPartials archives later. A second, silent clear here could have
+// deleted without a respaldo.
+function newOrder(){
   _pendingPartial=null;
   _expandedIdx=-1; S.items=[]; S.results=[]; S.hub=''; S.assembler=''; S._orderLoaded=false; S._orderStale=false; _staleAck=false; S.orderDate=''; S.segments=[];
   S.ronda=1; S.baseDate=''; S._r1Armado=null; S._recuperado=false; _pendingReport=null;
@@ -3965,7 +4040,7 @@ function partialVersionPath(hub, orderDate, epochMs, seq){ return `partials/${HU
 function isPartialFileForDate(name, orderDate){
   return !!name && (name===`${orderDate}.json` || (name.startsWith(`${orderDate}__`) && name.endsWith('.json')));
 }
-const PARTIAL_KEEP_VERSIONS=3; // newest N kept per (hub, orderDate); older ones pruned after a successful write
+const PARTIAL_KEEP_VERSIONS=5; // v2.3/C1 (was 3) — newest N kept per (hub, orderDate); older ones pruned after a successful write
 
 // v2.2/F6 — a random id per browser/device, stamped on every partial save so a resumed session can
 // tell the assembler when the copy they're looking at was continued on a different device.
@@ -4120,20 +4195,99 @@ async function loadPartialProgress(hub, orderDate){
   return {status: remoteErr?'error':'none'};
 }
 
-// v2.2/F10 — reason/done/total are for the partial_events log only; pass {silent:true} for a call
-// site that's a harmless re-clear of something another call site already logged (avoids double rows).
-function clearPartialSave(hub, orderDate, reason, done, total, opts){
+/* ── v2.3/C1 — RESPALDOS: nothing that was saved is thrown away for 30 days ──
+   Every path that deletes a partial, an order CSV or a report first writes a copy to
+     respaldos/{hub-slug}/{orderDate}__{epochMs}__{motivo}.json
+   and only deletes once that copy landed. No copy → no delete (a delete is never urgent; offline it waits). */
+const RESPALDO_DAYS=30;
+const RESPALDO_MOTIVO={ report_uploaded:'terminado', outbox_report:'terminado', leftover_after_report:'terminado',
+  discard_button:'empezar_de_cero', coordinator_upload:'subida_coordinador' };
+async function writeRespaldo(hub, r){
+  const t=serverNow();
+  const res=(r.payload&&Array.isArray(r.payload.results))?r.payload.results:null;
+  const body={ v:1, kind:r.kind, hub, orderDate:r.orderDate||'', ronda:r.ronda||(/-r2$/.test(r.orderDate||'')?2:1),
+    motivo:r.motivo||'', path:r.path||'', savedAt:t.toISOString(), deviceId:getDeviceId(), por:S.assembler||null,
+    done:r.done!=null?r.done:(res?res.filter(x=>x&&x.status!=='pending').length:null),
+    total:r.total!=null?r.total:(res?res.length:null),
+    armadores:res?[...new Set(res.map(x=>x&&x.assembler).filter(Boolean))]:[],
+    payload:r.payload };
+  const path=`respaldos/${HUB_SLUG[hub]}/${r.orderDate||'sin-fecha'}__${t.getTime()}__${r.motivo||r.kind}.json`;
+  await sbUpload(path, JSON.stringify(body), 'application/json');
+  return path;
+}
+// The newest copy of a partial, local or remote, by savedAt. Throws when the remote state can't be confirmed
+// (offline, or files exist but none parse) and there is no local copy — the caller must then NOT delete.
+async function newestPartialPayload(hub, orderDate){
+  let local=null;
+  try{ const raw=localStorage.getItem(partialKey(hub, orderDate)); if(raw){ const p=JSON.parse(raw); if(p&&p.items?.length) local=p; } }catch(_){}
+  let remote=null;
+  try{ const r=await fetchRemotePartial(hub, orderDate); if(r.found) remote=r.partial; }
+  catch(e){ if(!local) throw e; }
+  if(local&&remote) return (Date.parse(remote.savedAt)||0)>(Date.parse(local.savedAt)||0)?remote:local;
+  return local||remote;
+}
+
+// v2.2/F10 — reason/done/total are for the partial_events log. v2.3/C1 — archives the newest copy to respaldos
+// first and resolves false (deleting nothing) if it couldn't. opts.payload skips the lookup when the caller holds it.
+async function clearPartialSave(hub, orderDate, reason, done, total, opts){
+  opts=opts||{};
+  if(!orderDate){ console.error('clearPartialSave: orderDate required, got none for hub', hub); return false; }
   _partialSaveSeq++; // invalidates any in-flight savePartialToSupabase for this hub/date
-  if(!orderDate){ console.error('clearPartialSave: orderDate required, got none for hub', hub); return; }
+  let payload=opts.payload||null;
+  if(!payload){ try{ payload=await newestPartialPayload(hub, orderDate); }catch(e){ console.warn('respaldo: estado del partial desconocido — no se borra', e); return false; } }
+  if(payload){
+    try{ await writeRespaldo(hub, {kind:'partial', orderDate, ronda:payload.ronda, motivo:RESPALDO_MOTIVO[reason]||reason||'borrado', payload, done, total}); }
+    catch(e){ console.warn('respaldo no guardado — no se borra el partial', e); return false; }
+  }
   try{ localStorage.removeItem(partialKey(hub, orderDate)); }catch(_){}
-  if(!(opts&&opts.silent)) recordPartialEvent(hub, orderDate, null, 'cleared', reason||null, done, total);
-  (async()=>{
-    const prefix=`partials/${HUB_SLUG[hub]}/`;
-    let files=[];
-    try{ files=(await sbList(prefix)).filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json')); }catch(_){}
-    await Promise.all(files.map(f=>sbDelete(prefix+f.name).catch(()=>{})));
-    sbDelete(partialSbPath(hub, orderDate)).catch(()=>{}); // legacy flat file, if any
-  })();
+  recordPartialEvent(hub, orderDate, null, 'cleared', reason||null, done, total);
+  const prefix=`partials/${HUB_SLUG[hub]}/`;
+  let files=[];
+  try{ files=(await sbList(prefix)).filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json')); }catch(_){}
+  await Promise.all(files.map(f=>sbDelete(prefix+f.name).catch(()=>{})));
+  sbDelete(partialSbPath(hub, orderDate)).catch(()=>{}); // legacy flat file, if any
+  return true;
+}
+
+// Report filename → the instant it was finished (Monterrey, UTC-6 fixed). Reads v2.3 two-date and legacy names.
+function reportFinishEpoch(name){
+  const {finishDate}=reportDisplayInfo(name);
+  const m=name.replace('.csv','').match(/(?:^|_)(\d{2})-(\d{2})(?:_|$)/);
+  const [y,mo,d]=finishDate.split('-').map(Number);
+  if(!y||!m) return NaN;
+  return Date.UTC(y,mo-1,d,Number(m[1])-TZ_FALLBACK_MIN/60,Number(m[2]));
+}
+// v2.3/C1 — a partial for an order that already has a report, holding no product confirmed AFTER that report, is
+// a leftover: everything in it is already in the report. Archive it as "terminado" and delete it, so status can't
+// read it as in progress. Judged on the last confirmedAt, never on the save time: Contry had three of these, each
+// re-saved hours after its report because someone RESUMED the finished order (resumePartialSave saves at once).
+// A partial with work after the report (a real second pass) is left alone. Once per hub per session.
+const _sweptHubs=new Set();
+async function sweepLeftoverPartials(hub, partialFiles, reportFiles){
+  if(_sweptHubs.has(hub)) return; _sweptHubs.add(hub);
+  const ods=new Set(partialFiles.filter(f=>f.name&&f.name.endsWith('.json'))
+    .map(f=>f.name.includes('__')?f.name.split('__')[0]:f.name.replace(/\.json$/,'')));
+  for(const od of ods){
+    const r2=/-r2$/.test(od), bare=bareOrderDate(od);
+    const reps=reportFiles.filter(f=>f.name.startsWith(bare) && /_r2_/.test(f.name)===r2);
+    if(!reps.length) continue;
+    const repEp=Math.max(...reps.map(f=>reportFinishEpoch(f.name)).filter(n=>!isNaN(n)));
+    if(!isFinite(repEp)) continue;
+    let p=null; try{ p=(await fetchRemotePartial(hub, od)).partial||null; }catch(_){ continue; } // unreadable → leave it
+    if(!p) continue;
+    const lastConfirm=Math.max(0, ...(p.results||[]).map(r=>Date.parse(r&&r.confirmedAt)||0));
+    if(lastConfirm>repEp+60000) continue; // real work after the report — not a leftover
+    await clearPartialSave(hub, od, 'leftover_after_report', null, null, {payload:p});
+  }
+}
+// v2.3/C1 — retention: delete respaldos older than RESPALDO_DAYS. Once per hub per session.
+const _prunedHubs=new Set();
+async function pruneRespaldos(hub){
+  if(_prunedHubs.has(hub)) return; _prunedHubs.add(hub);
+  const prefix=`respaldos/${HUB_SLUG[hub]}/`, cut=serverNow().getTime()-RESPALDO_DAYS*86400000;
+  const files=await sbList(prefix);
+  await Promise.all(files.filter(f=>{ const ep=Number((f.name||'').split('__')[1]); return ep && ep<cut; })
+    .map(f=>sbDelete(prefix+f.name).catch(()=>{})));
 }
 
 /* ── v2.2/F5 — REBUILD FROM PICKS (the safety net) ──
@@ -4170,8 +4324,8 @@ async function rebuildPartialFromPicks(hub, orderDate, ronda){
   // 2. Every pick for this (hub, order_date, ronda) — order_date, never fecha: recordPick stamps fecha
   // with the calendar day, so a multi-day assembly's picks are spread across several fecha values and
   // only order_date groups them correctly.
-  const q=`hub=eq.${encodeURIComponent(hub)}&order_date=eq.${encodeURIComponent(od)}&ronda=eq.${ronda}&order=ts.asc&select=sku_key,cantidad,senal,armador,ts,seg_busqueda`;
-  const picks=await pgSelect('picks', q);
+  const q=`hub=eq.${encodeURIComponent(hub)}&order_date=eq.${encodeURIComponent(bareOrderDate(od))}&ronda=eq.${ronda}&order=ts.asc&select=sku_key,cantidad,senal,armador,ts,seg_busqueda`;
+  const picks=await pgSelectAll('picks', q); // v2.3/D4b
   if(!picks.length) return null;
 
   // 3. Dedupe by sku_key keeping the LAST row by ts (picks arrive ts.asc, so a later write naturally
@@ -4346,7 +4500,7 @@ function confirmDiscardPartialSave(){
   const dd=(p.orderDate||'').slice(0,10).split('-').slice(1).reverse().join('/');
   showModal(
     '⚠ Empezar de cero',
-    `Se perderán los ${done} de ${total} productos ya armados por ${workerStr} el ${dd}.\n\nTendrás que armar todo el pedido otra vez. Esta acción no se puede deshacer.`,
+    `Se perderán los ${done} de ${total} productos ya armados por ${workerStr} el ${dd}.\n\nTendrás que armar todo el pedido otra vez. El coordinador puede recuperarlo durante ${RESPALDO_DAYS} días.`,
     'Sí, empezar de cero',
     'm-danger',
     discardPartialSave
@@ -4381,12 +4535,17 @@ function resumePartialSave(){
   loadPicks().then(()=>{ renderList(); }); loadInvDia(); startPicksPoll();
 }
 
-function discardPartialSave(){
-  const hub=_pendingPartial?_pendingPartial.hub:S.hub;
-  const od=_pendingPartial?_pendingPartial.orderDate:S.orderDate;
-  const done=_pendingPartial?_pendingPartial.results.filter(r=>r.status!=='pending').length:null;
-  const total=_pendingPartial?_pendingPartial.results.length:null;
-  if(hub) clearPartialSave(hub, od, 'discard_button', done, total);
+async function discardPartialSave(){
+  const p=_pendingPartial;
+  const hub=p?p.hub:S.hub;
+  const od=p?p.orderDate:S.orderDate;
+  const done=p?p.results.filter(r=>r.status!=='pending').length:null;
+  const total=p?p.results.length:null;
+  // v2.3/C1 — the work goes to respaldos first; if that copy can't be written, nothing is deleted
+  if(hub && !(await clearPartialSave(hub, od, 'discard_button', done, total, {payload:p}))){
+    toast('❌ Sin conexión — no se pudo guardar el respaldo. No se borró nada; intenta de nuevo con internet.', 4000);
+    return;
+  }
   _pendingPartial=null; _pendingPartialOtherDevice=false;
   S._partialCheck='none'; _partialCheckRetried=false;
   const notice=document.getElementById('partial-save-notice');
