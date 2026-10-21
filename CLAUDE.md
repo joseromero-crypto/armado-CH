@@ -29,7 +29,11 @@ history (shipped), not current behaviour.
 9. If you read a new order-CSV column, add it to `ORDER_ROW_FIELDS`.
 
 ## Workflow
-- Local: `python3 -m http.server 8080` → http://localhost:8080 (not `file://`).
+- **Pending before the v2.3 push:** the end-to-end browser test in `armadoCH-v2.3-test-plan.md` (Claude runs it —
+  Jose doesn't test manually).
+- Local: `python3 -m http.server 8080` → http://localhost:8080 (not `file://`). From the shell, since the
+  browser pane's launcher can't read ~/Desktop; `.claude/launch.json` (`armado-local`) attaches the pane to it.
+  Close any `file://…/index.html` tab the editor opens — it runs without a write stub.
 - **Local runs write to prod.** Stub `sbUpload`, `sbDelete`, `pgInsert` in the browser before testing any
   write flow. Don't query prod data without asking.
 - Build → test on localhost, a few quick checks per phase; push only when the whole set works.
