@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p5')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p6')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -132,7 +132,7 @@ Every path the app reads or writes, who writes it, and how it dies.
 | `orders/{slug}/{date}-r2.csv` | `generarComplemento` | `fetchOrderForHub` (preferred over the base file for the same date) | coordinator 🗑, only if it is the row the 🗑 points at (§12) |
 | `pedido_completo/{slug}/{date}.json` | `doUpload` via outbox | 📄 No surtido, Revisar (cierre) | never |
 | `inventario_dia/{date}.json` | `mergeInventarioDia` (every upload) | semáforo `loadInvDia`, coordinator conflicts | never (one file per day accumulates) |
-| `partials/{slug}/{orderDate}__{epochMs}_{seq}.json` | `savePartialToSupabase` | `fetchRemotePartial` | `prunePartialVersions` (keeps newest 3), `clearPartialSave` |
+| `partials/{slug}/{orderDate}__{epochMs}_{seq}_{deviceId}.json` (pre-2026-10-21 files have no `_{deviceId}`) | `savePartialToSupabase` | `fetchRemotePartial` | `prunePartialVersions` (newest 5 + each device's newest), `clearPartialSave` |
 | `partials/{slug}/{orderDate}.json` | nothing (pre-v2.2 legacy) | read as a fallback | `clearPartialSave` |
 | `reports/{slug}/{orderDate}_{finishDate}_{HH-MM}_{Armadores}.csv` | `finalizeAssembly` (v2.3 two-date name) | coordinator lists, registro, 📋 Pedidos armados, `armadoMapForHub` | coordinator 🗑 `deleteReport` (respaldo first) |
 | `reports/{slug}/{orderDate}_r2_{finishDate}_{HH-MM}_{Armadores}.csv` | same, ronda 2 | same | same |
@@ -241,7 +241,11 @@ Coordinador (PIN) · Armar Pedido · 📖 Manual · `⏳ N pendiente(s) de envia
 4. One of three cards may appear in `#partial-save-notice`:
    - **📂 Pedido en progreso** — `↩ Continuar pedido` / `Empezar de cero` (danger modal naming count,
      armadores and date). Shows `Continuado en otro dispositivo a las HH:MM` when the winning copy came from
-     another device.
+     another device. **`↩ Continuar pedido` re-checks the server first** (v2.3, `resumePartialSave`): the card is
+     drawn when the hub is tapped and can sit on screen for hours, so the tap reads `Verificando…` while it
+     looks again. Newer remote copy → continues from that one (toast `↻ Se usó el avance más reciente: N de M
+     (guardado HH:MM)`). Every remote copy gone and a report covers the work → redraws as ✅ "ya se terminó" (no
+     resume). Server unreachable → continues with what the phone has, toast `⚠ Sin conexión — no se pudo confirmar…`.
    - **🛟 Recuperar armado** — no partial found, but picks exist and no report → rebuild from picks.
    - **✅ Este pedido ya se terminó** (v2.3) — a partial was found, but the order already has a report
      (`reportsForOrder`) and nothing in the partial was confirmed after it. No "Continuar" is offered, and the
@@ -350,8 +354,11 @@ any day can resume it.
 - Local: `trySetLocalStorage` → on `QuotaExceededError` evicts image cache → other hubs' order caches →
   order history, retrying after each. If it still fails, the list shows
   `⚠ Sin respaldo local en este dispositivo`.
-- Remote: **POST a new versioned file** `{orderDate}__{epochMs}_{seq}.json`. Never overwrites, so a remote
-  copy always exists. After a 2xx, `prunePartialVersions` deletes all but the newest **5** (`PARTIAL_KEEP_VERSIONS`).
+- Remote: **POST a new versioned file** `{orderDate}__{epochMs}_{seq}_{deviceId}.json`. Never overwrites, so a remote
+  copy always exists. After a 2xx, `prunePartialVersions` deletes all but the newest **5** (`PARTIAL_KEEP_VERSIONS`)
+  **plus the newest copy of every other device** (v2.3, after Contry 21/10: a phone that continued an old copy was
+  3 saves away from pruning another phone's newer work). The device comes from the filename; older names without
+  it are read once for `deviceId`; an unreadable file is kept.
   `_partialSaveSeq` drops a save superseded by a newer save or a clear before it POSTs.
 - **A failed remote write is retried (v2.3/D5).** The newest unsent payload sits in one slot (`_syncSlot`, mirrored
   to `calii_partial_pending_sync` so a reload keeps it); retries at 5 s, 15 s, then every 60 s, plus on `online`,
@@ -365,7 +372,7 @@ any day can resume it.
 - Each save writes a `partial_events` row (`saved`).
 
 **Load** (`loadPartialProgress`): reads local **and** remote, returns the newer by `savedAt`, and writes a
-newer remote back to local. Remote read = newest versioned file that parses, falling back to older versions,
+newer remote back to local. It runs when the hub is tapped; `↩ Continuar pedido` re-checks the remote copy (§7.2). Remote read = newest versioned file that parses, falling back to older versions,
 then the legacy flat file. Returns `found | none | error`; `error` (couldn't confirm either way) keeps
 Iniciar Armado blocked.
 
@@ -731,6 +738,12 @@ Found while reading the code on 2026-10-20. None fixed yet.
     **Fixed (v2.3 Phase 3):** `checkForPartialSave` now asks `reportsForOrder` first and, for a finished order with no
     later work, shows "✅ Este pedido ya se terminó" instead of "Continuar" and archives the leftover.
     The 14/09-r2 partial is different: a complemento with no R2 report — genuinely unfinished.
+11g. **Stale resume card (2026-10-21, MH Contry).** Ángel's phone loaded the resume card at ~09:34 while Daniel
+    was at 82/191, and tapped Continuar at 11:34 — after Daniel had reached 113/191 on his phone. `resumePartialSave`
+    used the 2-hour-old copy, so its saves (82/191) became the newest versions and the coordinator showed 82; Daniel's
+    113 copy (`2026-10-21__1792599437043_36.json`) was 3 saves from being pruned. **Fixed (v2.3):** Continuar re-checks
+    the server (§7.2) and pruning keeps each device's newest copy (§8.2). Not fixed: two phones genuinely working at
+    the same time still each continue their own copy — newest-by-`savedAt` wins on the next load, no per-item merge.
 11e. Re-upload overwrite (item 11) is still unverified: no order file shows `updated_at > created_at`, so no
     same-day overwrite has ever succeeded — or none was tried.
 

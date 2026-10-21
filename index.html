@@ -4940,7 +4940,8 @@ function legacyPartialKey(hub){ return PARTIAL_LS_PREFIX+slugify(hub); }
 function partialSbPath(hub, orderDate){ return `partials/${HUB_SLUG[hub]}/${orderDate}.json`; }
 // v2.2/F1 — versioned remote path. Each save POSTs a brand-new object (never overwrites), so there
 // is never a window where the remote copy doesn't exist (closes D1/D12/D13's delete-before-write gap).
-function partialVersionPath(hub, orderDate, epochMs, seq){ return `partials/${HUB_SLUG[hub]}/${orderDate}__${epochMs}_${seq}.json`; }
+// v2.3 — the device id rides at the end of the name so pruning can keep each phone's newest copy without reading it
+function partialVersionPath(hub, orderDate, epochMs, seq, deviceId){ return `partials/${HUB_SLUG[hub]}/${orderDate}__${epochMs}_${seq}${deviceId?'_'+deviceId:''}.json`; }
 function isPartialFileForDate(name, orderDate){
   return !!name && (name===`${orderDate}.json` || (name.startsWith(`${orderDate}__`) && name.endsWith('.json')));
 }
@@ -5011,7 +5012,7 @@ function savePartialProgress(){
 async function savePartialToSupabase(payload, seq){
   if(seq!==_partialSaveSeq) return; // superseded by a newer save or a clear before this one ran
   const epochMs=Date.parse(payload.savedAt)||Date.now();
-  const path=partialVersionPath(payload.hub, payload.orderDate, epochMs, seq);
+  const path=partialVersionPath(payload.hub, payload.orderDate, epochMs, seq, payload.deviceId);
   await sbUpload(path, JSON.stringify(payload), 'application/json');
   prunePartialVersions(payload.hub, payload.orderDate).catch(()=>{});
 }
@@ -5085,7 +5086,13 @@ async function prunePartialVersions(hub, orderDate){
   const files=(await sbList(prefix))
     .filter(f=>f.name && f.name.startsWith(`${orderDate}__`) && f.name.endsWith('.json'))
     .sort((a,b)=>b.name.localeCompare(a.name)); // newest first (epochMs sorts lexicographically)
-  const stale=files.slice(PARTIAL_KEEP_VERSIONS);
+  if(files.length<=PARTIAL_KEEP_VERSIONS) return;
+  // v2.3 — newest N, plus the newest copy of every other device. A phone that resumed an old copy must not prune
+  // away another phone's newer work (Contry 21/10). Names without a device (pre-change) are read once; unreadable → kept.
+  const devOf=async f=>{ const m=f.name.match(/__\d+_\d+_([^_.]+)\.json$/); if(m) return m[1];
+    try{ return JSON.parse(await sbFetch(prefix+f.name)).deviceId||f.name; }catch(_){ return f.name; } };
+  const seen=new Set(), stale=[];
+  for(let i=0;i<files.length;i++){ const d=await devOf(files[i]); if(i>=PARTIAL_KEEP_VERSIONS && seen.has(d)) stale.push(files[i]); seen.add(d); }
   await Promise.all(stale.map(f=>sbDelete(prefix+f.name).catch(()=>{})));
 }
 
@@ -5493,8 +5500,9 @@ function confirmDiscardPartialSave(){
     word:'BORRAR', okLabel:'Empezar de cero', onOk:discardPartialSave }); // v2.3/E
 }
 
-function resumePartialSave(){
-  if(!_pendingPartial) return;
+let _resumeChecking=false;
+async function resumePartialSave(){
+  if(!_pendingPartial||_resumeChecking) return;
   // If assembler list is configured, require a name before resuming
   if(S.assemblers.length>0&&!S.assembler){
     toast('⚠ Selecciona tu nombre para continuar');
@@ -5503,6 +5511,33 @@ function resumePartialSave(){
   }
   // §4 — same stale-list gate as Iniciar Armado
   if(S._orderStale && !_staleAck){ showStaleWarning(); return; }
+  // v2.3 — the card was loaded when the hub was tapped and may have sat on screen for hours. Contry 21/10: Ángel
+  // continued a 2-hour-old 82/191 copy over Daniel's 113/191. Look at the server again right before resuming.
+  const shown=_pendingPartial, hub=shown.hub, od=shown.orderDate;
+  const btn=document.querySelector('#partial-save-notice .partial-resume-btn'), btnTxt=btn?.textContent;
+  if(btn){ btn.disabled=true; btn.textContent='Verificando…'; }
+  _resumeChecking=true;
+  let fresh=null, unconfirmed=false, finished=false;
+  try{
+    const r=await fetchRemotePartial(hub, od);
+    if(r.found && (Date.parse(r.partial.savedAt)||0)>(Date.parse(shown.savedAt)||0)) fresh=r.partial;
+    else if(!r.found){ // every remote copy is gone — finished or discarded elsewhere since the card was drawn?
+      const reps=await reportsForOrder(hub, od, (await sbList(`reports/${HUB_SLUG[hub]}/`)).filter(f=>f.name&&f.name.endsWith('.csv')));
+      finished=!!(reps.length && reps[0].ep && partialInfo(shown).lastConfirm<=reps[0].ep+60000);
+    }
+  }catch(_){ unconfirmed=true; } // offline — resume what this phone has, but say so
+  _resumeChecking=false;
+  if(btn){ btn.disabled=false; btn.textContent=btnTxt; }
+  if(_pendingPartial!==shown || S.hub!==hub) return; // the screen moved on while we were checking
+  if(finished){ await checkForPartialSave(); return; } // redraws as "✅ Este pedido ya se terminó" and archives the copy
+  if(fresh){
+    _pendingPartial=fresh;
+    try{ localStorage.setItem(partialKey(hub,od), JSON.stringify(fresh)); }catch(_){}
+    const pi=partialInfo(fresh);
+    toast(`↻ Se usó el avance más reciente: ${pi.done} de ${pi.total} (guardado ${localHM(new Date(pi.at))})`, 4000);
+  } else if(unconfirmed){
+    toast('⚠ Sin conexión — no se pudo confirmar si hay avance más nuevo en otro teléfono. Si alguien más armó este pedido, avisa al coordinador.', 5000);
+  }
   S.hub=_pendingPartial.hub;
   S.items=_pendingPartial.items;
   S.results=restoreDates(_pendingPartial.results);
