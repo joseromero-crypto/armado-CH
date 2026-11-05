@@ -14,6 +14,8 @@ history (shipped), not current behaviour.
   in-app at runtime. Edit the .md to change it.
 - Supabase via raw `fetch`: Storage bucket `solcitudesarmado` (typo is intentional) + tables `picks`,
   `partial_events`. The anon key in `index.html` is **production**.
+- Masterview (product images) is read-only here: public bucket `masterview`, uploaded only from Invoice Reader's
+  admin screen. `imagedb.json` is its bundled offline copy.
 
 ## Rules that must survive any change
 1. Assembler inputs are only barcode + quantity. No new fields to type.

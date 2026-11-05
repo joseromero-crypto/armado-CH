@@ -27,7 +27,7 @@ CH (CH Guadalupe — `HUB_CH` maps every hub to `'CH-GDLP'`).
 
 | Role | Does |
 |---|---|
-| **Coordinador** (PIN) | Uploads each hub's order CSV, manages the assembler list, downloads reports, runs the registration copilot, metrics, inventory conflicts, closing-inventory cross-check, round-2 complementos, image DB upload, 🛟 recovery |
+| **Coordinador** (PIN) | Uploads each hub's order CSV, manages the assembler list, downloads reports, runs the registration copilot, metrics, inventory conflicts, closing-inventory cross-check, round-2 complementos, 🛟 recovery |
 | **Armador** (no PIN) | Picks hub + name, assembles item by item (scan barcode, type quantity), saves & exits or finishes |
 | **Inventory owner** | Receives the daily faltantes CSV |
 
@@ -44,9 +44,9 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p6')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p7')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
-├── imagedb.json                # bundled image DB (~1.3 MB, ~9.5k keys) — the FALLBACK, not the source (§9.10)
+├── imagedb.json                # bundled copy of masterview/latest.json (~2.0 MB) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
 ├── manual/manual-armado-ch.pdf # stale snapshot of the .md — the in-app ⬇ PDF button supersedes it
 ├── armadoCHhandoff.md          # this file
@@ -140,7 +140,7 @@ Every path the app reads or writes, who writes it, and how it dies.
 | `respaldos/{slug}/{orderDate}__{epochMs}__{motivo}.json` | `writeRespaldo` — before every partial clear, order 🗑, report 🗑, same-day overwrite | (Phase 4: Respaldos panel) | `pruneRespaldos` after 30 days |
 | `metrics/{slug}/{report stem}.json` | `uploadMetricsSidecar` | metrics screen | with its report, or 🗑 on the metrics row |
 | `inventario_cierre/{date}.json` | `uploadCierre` | `loadCierre` (newest file) | never |
-| `imagedb/latest.json`, `imagedb/version.txt` | `uploadImageDB` (delete-then-insert) | `loadImageDB` | replaced on upload |
+| `imagedb/latest.json`, `imagedb/version.txt` | nothing since 2026-11-05 | nothing (dead files, left in place) | never |
 | `assemblers.json` | `saveAssemblers` (delete-then-insert) | setup + coordinator | replaced on save |
 | `coordinator_pin.txt` | edited by hand in the dashboard | `validatePin` | — |
 
@@ -165,7 +165,7 @@ All access is wrapped in try/catch. Writes that matter go through `trySetLocalSt
 | `calii_order_cache_{slug}` | last loaded order `{orderDate, ronda, baseDate, items}` (projected rows) | overwritten per load; evicted on quota pressure |
 | `calii_outbox` | queued uploads (§8.5) | until each lands |
 | `calii_device_id` | random device id | forever |
-| `calii_imgdb_cache` | `{v, map}` image DB | replaced when `version.txt` changes; first to go on quota pressure |
+| `calii_imgdb_cache` | old image DB copy, replaced by Cache Storage `calii-masterview` (§9.10) | removed at the start of every `loadImageDB` |
 | `calii_order_history` | today's finished report CSVs (silent backup) | filtered to today on every save |
 | `calii_metrics_cache` | metrics sidecars keyed by path | pruned to files that still exist |
 | `calii_ordercount_{slug}` | `{date, activos, reserva}` from this device's last upload | coordinator display only |
@@ -314,7 +314,7 @@ Reached from **Finalizar pedido** (`showSummary`, mode `'live'`) or from 📋 Pe
 | 📊 Métricas | `metricas` | the metrics table (§7.6, §9.8) — moved from its own screen into the menu (2026-10-21). `.coord-body.wide` (900 px) on this page only. ↺ here = `loadMetrics(false)` (lists every sidecar, fetches only new ones) | `loadMetrics`, `renderMetrics` |
 | 🔄 Cierre | `cierre` | closing-inventory upload, `Revisar` → candidates → `Generar complemento` / `Generar todos` (§9.7) | `refreshCierreStatus` |
 | 👤 Armadores | `armadores` | add / remove names | `loadAssemblers` + `renderAssemblerList` |
-| 🖼 Imágenes | `imagenes` | Masterview upload (§9.10) | `refreshImgDbStatus` |
+| 🖼 Imágenes | `imagenes` | Read-only: `Masterview actualizado el dd/mm · se sube desde Invoice Reader (admin)` + product count (§9.10) | `refreshImgDbStatus` |
 
 ### 7.6 Metrics, Registro, Manual
 - **📊 Métricas** (coordinator page, not a screen since 2026-10-21) — one row per sidecar; filters (armador, hub,
@@ -351,7 +351,7 @@ any day can resume it.
 **Save** (`savePartialProgress`, on every confirm/faltante, resume, save & exit, `exitKeepingPartial`):
 - Skipped when nothing is resolved yet (no empty partials).
 - Payload: `{hub, items (projected), results, segments, ronda, baseDate, r1Armado, savedAt, orderDate, deviceId}`.
-- Local: `trySetLocalStorage` → on `QuotaExceededError` evicts image cache → other hubs' order caches →
+- Local: `trySetLocalStorage` → on `QuotaExceededError` evicts other hubs' order caches →
   order history, retrying after each. If it still fails, the list shows
   `⚠ Sin respaldo local en este dispositivo`.
 - Remote: **POST a new versioned file** `{orderDate}__{epochMs}_{seq}_{deviceId}.json`. Never overwrites, so a remote
@@ -597,10 +597,19 @@ Row keys `'r'+i` are assigned **before** the sort — keep it that way or saved 
 There is no comparison against what was actually typed into Retool.
 
 ### 9.10 Image DB
-Boot: `imagedb/version.txt` → cached map if the version matches, else `imagedb/latest.json` → else the bundled
-`./imagedb.json`. Coordinator uploads the Masterview CSV (`Item`, `Código de Barras`, `Image URL`, matched
-case/accent-insensitively; ≥1000 keys or rejected). Lookup: bcKey → exact name → first word → prefix scan
-(≥5 chars, so a missing product shows 📦 instead of a wrong photo).
+Masterview is the shared all-cities catalog, **uploaded only from Invoice Reader's admin screen**. Armado CH just reads
+it from the public bucket `masterview` in this same project (`latest.json`, `version.txt`; no anon write policy).
+Boot (`loadImageDB`): remove the old `calii_imgdb_cache` → `masterview/version.txt`, cached copy if the version matches,
+else `latest.json` → if that fails, the last cached copy whatever its version → else the bundled `./imagedb.json`
+(a full copy of `latest.json`; refresh it by hand when a deploy needs a newer offline floor). The old flat bundled file
+is still accepted, because a phone's HTTP cache can hold it. The copy lives in Cache Storage `calii-masterview`, the
+same name as Sorting Hub and MH Recibo, and `sw.js` keeps it across deploys.
+Barcode entries are `{url, name, sku, c}`, name entries plain URLs: read them through `imgUrl()` / `imgName()`.
+`detectSuspiciousBarcodes` only asks whether the key exists, so a known barcode with no image isn't suspicious.
+Lookup (`getImgUrl`): bcKey → exact name → first word → prefix scan (≥5 chars, so a missing product shows 📦 instead of
+a wrong photo). An entry with no `url` falls through to the next step. **No city logic here:** `alt` and `hubCities` are
+not read, and nothing is filtered or reordered by city (rule 2). The old `solcitudesarmado/imagedb/` files stay in the
+bucket; nothing reads them.
 
 ### 9.12 Verificar captura (v2.3 Part F)
 Catches misclicks made while typing salidas into Retool. The coordinator uploads each hub's Retool export **on that
@@ -633,6 +642,7 @@ hub's card** (same table as the order CSV with `Salida (kg/pz)` filled; it has n
 ### 9.11 Offline & service worker
 `sw.js` is **network-first** for same-origin + cdnjs (online always gets the latest deploy; offline falls
 back to cache). Precaches the shell, `imagedb.json`, the manual and PapaParse. Never intercepts `supabase.co`.
+On activate it deletes every old cache except `calii-masterview` (§9.10).
 `skipWaiting` + `clients.claim`. **Bump `CACHE_NAME` on every deploy that changes `index.html`.**
 `beforeunload` warns when an order is open and you're not on the summary.
 
