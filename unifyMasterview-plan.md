@@ -594,6 +594,7 @@ const MV_BUCKET='masterview';
   the catalog, not the code. When such a product is ordered, the old first-word and prefix fallbacks can show another product's photo. In the 19/10 order's reserva
   rows, Nachos Tostitos 400g (7501011173521) now shows Doritos, and Totopos Nūbe lemon pepper (767203598955) shows Charras. Barcode 767203598894, Totopos Nūbe
   enchilados in that order, is IYL425 Chips de camote in Masterview.
+- **Follow-up 2026-11-05, committed, not pushed:** `getImgUrl` is now barcode then exact name only, and skips a barcode whose Masterview name shares no real word with the order's; in the 19/10 order 3 of 451 rows lost a photo (the three reserva rows above), the other 448 and all 152 activos are unchanged.
 - **Not checked yet:** real phones (Android Chrome, iPhone Safari).
 
 - `loadImageDB` → `masterview/` first.

@@ -1379,21 +1379,24 @@ function setDbStatus(type,msg){
   document.getElementById('db-dot').className='db-dot '+(type==='ok'?'ok':type==='loading'?'loading':'');
   document.getElementById('db-label').textContent=msg;
 }
+// §9.10 — no photo beats a wrong photo. A barcode whose Masterview name shares no real word with the order's
+// name is another product (767203598894: Totopos Nūbe in the order, Chips de camote in Masterview).
+const IMG_FILLER=new Set('de del la las el los con sin y para por en al un una a o e sabor tipo g gr grs gramos kg ml l lt lts litro litros pz pza pzas pieza piezas caja bolsa paquete pack'.split(' '));
+function nameWords(s){ return normName(s).split(' ').filter(w=>w&&!/\d/.test(w)&&!IMG_FILLER.has(w)); }
+function nameClash(orderName, mvName){
+  const a=nameWords(orderName), b=new Set(nameWords(mvName));
+  return a.length>0 && b.size>0 && !a.some(w=>b.has(w)); // no name on either side = nothing to compare
+}
+function barcodeClash(item){
+  const e=S.imgDb[bcKey(cleanBC(item['Código de barras']))];
+  return !!imgUrl(e) && nameClash(item['Producto'], imgName(e));
+}
 function getImgUrl(item){
   const bc=cleanBC(item['Código de barras']), name=normName(item['Producto']||'');
   const bk=bcKey(bc); // §5 — strip leading zeros to match the catalog
-  const byCode=bk?imgUrl(S.imgDb[bk]):null; // url:null entries fall through to the name
+  const byCode=bk&&!barcodeClash(item)?imgUrl(S.imgDb[bk]):null; // url:null entries fall through to the name
   if(byCode) return byCode;
-  const byName=name?imgUrl(S.imgDb[name]):null;
-  if(byName) return byName;
-  const fw=name.split(' ')[0];
-  const byWord=fw.length>3?imgUrl(S.imgDb[fw]):null;
-  if(byWord) return byWord;
-  // §5 — the prefix fallback: a wrong image is worse than none, so require ≥5 chars before guessing.
-  for(const k of Object.keys(S.imgDb)){
-    if(k.length>5 && (name.startsWith(k) || (fw.length>=5 && k.startsWith(fw)))){ const u=imgUrl(S.imgDb[k]); if(u) return u; }
-  }
-  return null;
+  return (name?imgUrl(S.imgDb[name]):null)||null; // exact name only: first-word and prefix guesses showed other products
 }
 
 /* ── PIN ── */
@@ -2054,6 +2057,7 @@ async function doUpload(hub, text, items, badge, fields){
     // §2 — merge this hub's rows into today's shared inventory baseline (most-recent-upload-wins per SKU)
     mergeInventarioDia(hub, items).catch(e=>console.warn('inventario_dia:',e));
     checkSalidaEnvio(items); // §2a — non-blocking warning if the "outflow not discounted" premise looks broken
+    console.info(`Masterview: ${items.filter(barcodeClash).length} de ${items.length} filas con código de otro producto (${hub})`); // §9.10 — console only
     const reserva=items.filter(r=>!((parseFloat(r['Inventario hub saliente'])||0)>0)).length;
     const activos=items.length-reserva;
     try{ localStorage.setItem('calii_ordercount_'+HUB_SLUG[hub], JSON.stringify({date:od, activos, reserva})); }catch(_){}

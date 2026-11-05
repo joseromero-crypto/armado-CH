@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p7')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p8')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled copy of masterview/latest.json (~2.0 MB) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -606,8 +606,11 @@ is still accepted, because a phone's HTTP cache can hold it. The copy lives in C
 same name as Sorting Hub and MH Recibo, and `sw.js` keeps it across deploys.
 Barcode entries are `{url, name, sku, c}`, name entries plain URLs: read them through `imgUrl()` / `imgName()`.
 `detectSuspiciousBarcodes` only asks whether the key exists, so a known barcode with no image isn't suspicious.
-Lookup (`getImgUrl`): bcKey → exact name → first word → prefix scan (≥5 chars, so a missing product shows 📦 instead of
-a wrong photo). An entry with no `url` falls through to the next step. **No city logic here:** `alt` and `hubCities` are
+Lookup (`getImgUrl`): bcKey → exact name → 📦. **No photo beats a wrong photo:** the first-word and prefix guesses are
+gone, because products missing from Masterview got another product's photo. A barcode entry is also skipped when its
+Masterview name shares no word with the order's name (`nameClash`; sizes, units and `IMG_FILLER` don't count, a shared
+brand does), since a reused barcode is another product. `doUpload` logs how many rows of the full order clash, in the
+console only: no UI, nothing blocked. An entry with no `url` falls through to the next step. **No city logic here:** `alt` and `hubCities` are
 not read, and nothing is filtered or reordered by city (rule 2). The old `solcitudesarmado/imagedb/` files stay in the
 bucket; nothing reads them.
 
