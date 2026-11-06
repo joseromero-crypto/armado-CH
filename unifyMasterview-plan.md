@@ -1,6 +1,6 @@
 # Unify Masterview — one catalog for Armado CH, Sorting Hub, MH Recibo and Invoice Reader
 
-Status: Phases 1, 2 and 3 done 2026-11-05, and the first real upload is published. Phases 4.1, 4.2 and 4.3, and the three static apps' parts of Phase 6, are done and committed, and go live when Jose pushes. Phase 4.4 is next; until then Invoice Reader doesn't read `masterview/`. Written 2026-11-03 from the code in the four repos and the all-cities export
+Status: Phases 1, 2 and 3 done 2026-11-05, and the first real upload is published. Phases 4.1, 4.2, 4.3 and 4.4, and the three static apps' parts of Phase 6, are done and committed, and go live when Jose pushes. Phase 4.4 also needs one migration run in the SQL editor (see its result). Written 2026-11-03 from the code in the four repos and the all-cities export
 (`table-data - 2026-11-03T101825.372.csv`, which had the wrong column set; see §0).
 
 This file lives in all four repos (armado-CH, sorting-hub, mh-recibo, calii-invoice-reader), as
@@ -607,6 +607,30 @@ const MV_BUCKET='masterview';
 - Run one assembly end to end (no change to `confirmItem` / `generateCSV` expected).
 
 ### 4.4 Invoice Reader (repo `calii-invoice-reader`): city-aware matching
+
+**Result: done 2026-11-05, committed, not pushed.** The steps below are kept as the record of what was planned.
+
+- **To run:** `supabase/migrations/20261105140000_confirm_hub_city_row.sql` in the SQL editor. It works with the old and new code, so it can run before or after the push. Until it runs, a confirmed row at a CDMX or Guadalajara hub gets the base city's name for the 36 SKUs with regional names: `confirm_receiving_row` rewrote the product from the base row, and that's the text copied to Retool.
+- **Differs from the plan:**
+  - `asCatalogItem` is in `lean/catalog.ts`, not `server/workspace.ts`. `cityItems(products, city)` returns the hub's rows plus one entry per other city's row, marked `otherCity`, so `match()` takes no city argument. A null city reads `read_mv_catalog('Monterrey')` as before.
+  - Other cities are read from `mv_product_city` in 1,000-row pages with only the columns matching uses, not with `read_mv_catalog`. All four cities through that RPC took 30 s; the 14 pages take 2 s and 4.6 MB. No new RPC, so no migration for this.
+  - A code that only hits another city never sets `item`: the product is a candidate on top, the row is `review`, and the reason says "Otra ciudad ({Ciudad}): el código coincide con …". Pieces stay empty until the receiver picks it, if the invoice prints only cajas.
+  - A saved mapping to a product the hub's city doesn't have stays a labelled candidate too, so a pick at one hub never bulk-confirms at another city.
+  - Pieces fall back to the base row only when the city's unit is empty or the same. In Guadalajara 82 rows name another unit with empty pieces, and Caja × the base row's 1 would have auto-confirmed a wrong quantity. Those rows now go to review.
+  - The barcode also falls back to the base row. Supplier SKU falls back even when the city has another supplier (3 / 12 / 76 rows in Saltillo / CDMX / Guadalajara), as planned.
+  - Supplier order: hub vote, printed name in the hub's suppliers, whole-catalog vote, printed name in the whole catalog. A supplier with no items in the hub's city leaves the code lookup empty, so only the fallback that checks the description applies. Without this, a Monterrey Arca invoice at a CDMX hub auto-confirmed Coca-Cola as Jamón serrano on a short code.
+  - A shared barcode with one hit in the hub's city keeps that product selected, goes to `review`, and offers the other SKUs. A matching supplier code settles it. The same SKU in two cities is not a conflict.
+  - Also changed: "Agregar renglón" uses the hub's city row, the browser's catalog cache is per hub, a product picked from another city on a Listo row leaves "Confirmar todos los listos", and search also finds other cities' names.
+- **Checks passed:**
+  - `npm test` 272/272, with new tests for city fallback, the other-city label, null city, a shared barcode, and the confirmed name per hub city.
+  - Bench `--replay` on the old CSV, on the Monterrey file, and on all four files as a Monterrey hub: 238/238 quantities, 212 identity, 201 bulk-confirmable, 3 auto-ok rows against the old answer key, the same 3 as before. Old and new `match()` compared row by row on all three: 0 differences in item, status, quantity, reasons, candidates or supplier.
+  - Real catalog read from armado-ch per hub city: 5,492 SKUs, 18,612 entries, hub's city first in the list (Monterrey 4,896, Saltillo 4,714, CDMX 4,528, Guadalajara 4,474), 56 shared barcodes and 36 SKUs with regional names, both equal to the import report. ZYZ063 is local at CDMX and Guadalajara and "Otra ciudad (CDMX)" at Monterrey and Saltillo. DBK414 is "Jitomate saladet ahorramás" at CDMX and Guadalajara.
+- **First real CDMX invoice, 2026-11-05 (Mexideli 1250448, MH Condesa, $0.057 for two reads, nothing written to the database):** all 4 rows got the right product and pieces (12, 12, 12, 24, equal to the OC) with the real catalog and mappings, reading the factura alone and reading factura + Hoja de Pedido + OC together. With all three pages it still returned the factura's 4 rows, so 5886 (ordered, not invoiced) wasn't added. All 4 rows went to `review`, for two reasons unrelated to cities: the factura has a RECIBIDO stamp and no ticks, so every row says "sin palomita", and its printed "Piezas:24" doesn't match any column, or the 60 pieces, so it raises the total warning. Matching against Monterrey only gives the same result, because these products exist there too, so this invoice doesn't exercise the other-city path.
+- **Not checked yet:**
+  - An invoice with a product the hub's city has and Monterrey doesn't, or one from another city. All 13 bench invoices are Monterrey. Reading them as another city's hub only shows they aren't that city's invoices (Guadalajara's Arca rows use the same codes for other Ciel and Del Valle items).
+  - First open on the deployed site. The catalog read went from about 6 s to 5–10 s from this laptop, and the browser gets 1.4 MB. Polls don't read it. Netlify's limit for a synchronous function hasn't been tried with this.
+  - `load`, a read and a confirm through the deployed functions at a hub with a city.
+  - The "Otra ciudad" pill on the running screen. The app's browser pane refused the local server, so it was checked only as a headless render of the same markup and CSS.
 
 - `server/workspace.ts` `asCatalogItem(product, cityRow)`:
   - supplier, supplier SKU, unidad de compra and piezas por unidad come from **the hub's city row**,
