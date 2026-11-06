@@ -1,6 +1,6 @@
 # Unify Masterview — one catalog for Armado CH, Sorting Hub, MH Recibo and Invoice Reader
 
-Status: Phases 1, 2 and 3 done 2026-11-05, and the first real upload is published. Phases 4.1, 4.2, 4.3 and 4.4, and the three static apps' parts of Phase 6, are done and committed, and go live when Jose pushes. Phase 4.4 also needs one migration run in the SQL editor (see its result). Written 2026-11-03 from the code in the four repos and the all-cities export
+Status: Phases 1, 2 and 3 done 2026-11-05, and the first real upload is published. Phases 4.1, 4.2, 4.3 and 4.4, and the three static apps' parts of Phase 6, are done and committed, and go live when Jose pushes. Written 2026-11-03 from the code in the four repos and the all-cities export
 (`table-data - 2026-11-03T101825.372.csv`, which had the wrong column set; see §0).
 
 This file lives in all four repos (armado-CH, sorting-hub, mh-recibo, calii-invoice-reader), as
@@ -610,7 +610,7 @@ const MV_BUCKET='masterview';
 
 **Result: done 2026-11-05, committed, not pushed.** The steps below are kept as the record of what was planned.
 
-- **To run:** `supabase/migrations/20261105140000_confirm_hub_city_row.sql` in the SQL editor. It works with the old and new code, so it can run before or after the push. Until it runs, a confirmed row at a CDMX or Guadalajara hub gets the base city's name for the 36 SKUs with regional names: `confirm_receiving_row` rewrote the product from the base row, and that's the text copied to Retool.
+- **Migration applied 2026-11-05:** `supabase/migrations/20261105140000_confirm_hub_city_row.sql`, run by Jose in the SQL editor and confirmed from `pg_proc`. Before it, a confirmed row at a CDMX or Guadalajara hub got the base city's name for the 36 SKUs with regional names: `confirm_receiving_row` rewrote the product from the base row, and that's the text copied to Retool. No real row has exercised it yet.
 - **Differs from the plan:**
   - `asCatalogItem` is in `lean/catalog.ts`, not `server/workspace.ts`. `cityItems(products, city)` returns the hub's rows plus one entry per other city's row, marked `otherCity`, so `match()` takes no city argument. A null city reads `read_mv_catalog('Monterrey')` as before.
   - Other cities are read from `mv_product_city` in 1,000-row pages with only the columns matching uses, not with `read_mv_catalog`. All four cities through that RPC took 30 s; the 14 pages take 2 s and 4.6 MB. No new RPC, so no migration for this.
