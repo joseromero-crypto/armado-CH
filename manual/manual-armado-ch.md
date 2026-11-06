@@ -65,7 +65,7 @@ de inicio*. Así se abre como cualquier otra app y a pantalla completa.
 Al abrir verás dos botones:
 
 - **Coordinador** — pide un PIN de 4 dígitos.
-- **Armar Pedido** — entra directo, sin contraseña.
+- **Armar pedido** — entra directo, sin contraseña.
 
 Abajo, una línea gris te dice si la base de imágenes cargó bien. Si dice `⚠ Sin imágenes`, la app **funciona
 igual**: solo no vas a ver la foto de los productos.
@@ -79,7 +79,7 @@ reintentar. Ver [sección 9](#9-cuando-no-hay-internet).
 
 ### Paso 1 — Elegir hub y nombre
 
-Toca **Armar Pedido**. Verás la lista de hubs. Toca el tuyo.
+Toca **Armar pedido**. Verás la lista de hubs. Toca el tuyo.
 
 La app busca sola el pedido más reciente de ese hub y te dice:
 
@@ -93,9 +93,9 @@ franja ámbar, la ventana vuelve a salir.
 Después elige **tu nombre** de la lista. Es obligatorio: es lo que hace que el reporte diga quién armó cada
 producto. Si tu nombre no aparece, pídele al coordinador que te agregue.
 
-Toca **Iniciar Armado**.
+Toca **Iniciar armado**.
 
-### Si aparece un aviso amarillo
+### Si aparece el aviso "Pedido en progreso"
 
 Significa que **ya hay un armado a medias** para ese hub — tuyo o de un compañero. Tienes dos opciones:
 
@@ -105,10 +105,10 @@ Significa que **ya hay un armado a medias** para ese hub — tuyo o de un compa�
   **escribir la palabra BORRAR** en un cuadro para confirmar. El avance se guarda en un respaldo que el coordinador
   puede recuperar durante 30 días.
 
-Mientras el aviso esté ahí, *Iniciar Armado* está bloqueado. Es a propósito: para que nadie borre por accidente
+Mientras el aviso esté ahí, *Iniciar armado* está bloqueado. Es a propósito: para que nadie borre por accidente
 el trabajo de alguien más.
 
-### Si aparece un aviso verde: "Este pedido ya se terminó"
+### Si aparece el aviso "Este pedido ya se terminó"
 
 Ese pedido ya tiene reporte y no hay nada pendiente. No hay que continuarlo. Si crees que falta algo, avísale al
 coordinador.
@@ -328,13 +328,13 @@ Una tarjeta por hub. Cada una muestra el pedido cargado y en qué va:
 | Estado | Qué significa |
 |---|---|
 | ⚪ **Pendiente** | Nadie ha empezado |
-| 🟡 **En progreso 112/301** | Alguien lo está armando; dice quién y hace cuánto se guardó |
+| ⚫ **En progreso 112/301** | Alguien lo está armando; dice quién y hace cuánto se guardó |
 | ✅ **Armado 152/152** | Terminado y con reporte (o *con pendientes* si quedaron productos sin armar) |
 | 🔴 **Se perdió el avance** | Hubo escaneos pero no hay avance guardado — usa 🛟 **Recuperar** |
 | 🔒 **Cerrado por coordinador** | El coordinador lo cerró sin terminar de armar |
 
 **Subir un pedido nuevo encima de uno sin terminar.** Si el pedido cargado de un hub no está ✅ y subes el de un día
-nuevo, sale un aviso rojo: *⛔ MH Condesa todavía no termina el pedido del 03/09*, con cuánto se armó y quién. Al subir
+nuevo, sale un aviso: *⛔ MH Condesa todavía no termina el pedido del 03/09*, con cuánto se armó y quién. Al subir
 el nuevo, los armadores dejan de ver el anterior. Puedes **Cancelar**, **Ver respaldos**, o escribir **SUBIR** para
 subirlo de todos modos.
 
@@ -533,20 +533,44 @@ en la segunda ronda.
 
 ## 8. Métricas
 
-En el menú del coordinador, **📊 Métricas** abre la tabla. Un renglón por armado. El `↺` de arriba la actualiza.
+En el menú del coordinador, **📊 Métricas** abre dos tablas: **Por armador** (un renglón por persona) y **Por armado**
+(un renglón por armado). El `↺` de arriba las actualiza.
 
-`⚑ · Fecha · Hub · Armador · SKUs · Min reloj · Min activos · SKUs/hr · Faltantes · Fecha corta · % completo · % parcial · % sobrante · % faltante · % surtido · Seg/SKU`
+`Fecha · Hub · Armador · SKUs · Errores · % error · Min reloj · Min app · SKUs/hr reloj · SKUs/hr app · Faltantes · Fecha corta · % completo · % parcial · % sobrante · % faltante · % surtido · Notas`
+
+### Los errores
+
+Salen solos de **MH Recibo**: cuando el hub cierra su recepción, cada producto que llegó distinto se compara contra lo que
+se armó. Abarrotes se arma un día y se recibe a la mañana siguiente, así que la recepción se empareja con el armado anterior
+cuyos productos coinciden con los del envío. Si ninguno coincide en al menos 80%, no se le atribuye a nadie y la nota lo dice.
+
+| | Significa | ¿Cuenta para el armador? |
+|---|---|---|
+| **Faltó** | Se registró armado, llegó de menos | Sí |
+| **De más** | Llegó más de lo armado, o un producto que no iba en el pedido | Sí |
+| **Producto cruzado** | Faltan n piezas de un producto y sobran n de su hermano: un solo error | Sí |
+| **Captura en CH** | Se armó bien, se capturó mal la salida | No |
+| **Revisar** | Armado, enviado y recibido no coinciden entre sí | No |
+
+- `—` en Errores significa que **todavía no hay recepción cerrada**. `0` significa que llegó todo bien.
+- Toca el número para ver cada producto y quién lo armó.
+- **% error** = errores ÷ SKUs, solo de armados con recepción cerrada.
+- Si un producto llegó y nadie lo armó en un pedido de varios armadores, queda como **Sin asignar**.
 
 ### Los dos tiempos
 
 | | Qué es |
 |---|---|
 | **Minutos reloj** | De principio a fin, con pausas incluidas |
-| **Minutos activos** | Lo mismo, restando cada hueco de más de 5 minutos entre productos |
+| **Minutos app** | Lo mismo, restando cada hueco de más de 5 minutos entre dos productos: el tiempo armando en la app |
 
 **Los dos se reportan siempre y nunca se mezclan.** Para comparar contra la medición manual se usa
-**minutos reloj**, porque el dato manual también era de reloj. Los minutos activos sirven para saber cuánto de
+**minutos reloj**, porque el dato manual también era de reloj. Los minutos app sirven para saber cuánto de
 un armado fue trabajo y cuánto fue espera.
+
+Hay una velocidad para cada tiempo: **SKUs/hr reloj** y **SKUs/hr app**. Reloj dice cuánto rindió el turno, con todo y
+pausas. App dice qué tan rápido arma la persona mientras arma. En la tabla Por armador es la mediana de sus armados de una
+sola persona.
 
 Si un armado se guardó y se retomó al día siguiente, **el hueco de la noche nunca se cuenta**.
 
@@ -561,32 +585,34 @@ Si un armado se guardó y se retomó al día siguiente, **el hueco de la noche n
 
 Juntos separan dos cosas distintas: qué tan exacto se armó, y qué tanto alcanzó el inventario.
 
-### Las banderas ⚑
+### La columna Notas
 
-Marcan armados que no se pueden comparar contra un promedio normal. **Nunca se esconde ni se excluye nada** —
+Marca armados que no se pueden comparar contra un promedio normal. **Nunca se esconde ni se excluye nada**:
 se marca para que se sepa por qué un número se ve raro.
 
 | | Significa |
 |---|---|
-| 🌙 | Empezó un día y terminó otro |
-| ⏸ | Se guardó y se retomó |
-| 🕐 | Hubo una pausa de más de 15 minutos |
-| 👥 | Más de un armador |
-| 🔹 | Pedido chico (menos de 10 SKUs) — la velocidad no es confiable |
-| ⏳ | Se terminó con productos sin armar |
-| 📶 | El reporte se envió después, sin conexión |
-| 📅 | La solicitud no era del día en que se armó (lista vieja) |
-| ⛔ | Sin dato de tiempo — las columnas de velocidad no significan nada |
+| Cruza día | Empezó un día y terminó otro |
+| Retomado | Se guardó y se retomó |
+| Pausa larga | Hubo una pausa de más de 15 minutos |
+| Varios armadores | Más de un armador |
+| Pedido chico | Menos de 10 SKUs: la velocidad no es confiable |
+| Incompleto | Se terminó con productos sin armar |
+| Reporte diferido | El reporte se envió después, sin conexión |
+| Lista vieja | La solicitud no era del día en que se armó |
+| Sin tiempo | Sin dato de tiempo: las columnas de velocidad no significan nada |
+| Cerrado por coordinador | Se cerró sin terminar de armar |
+| Recuperado | Reconstruido desde los escaneos, sin tiempos reales |
 
 ### Filtros y descarga
 
 Filtra por armador, hub y periodo. `Solo irregulares` acota a los marcados. Toca cualquier encabezado para
 ordenar.
 
-`⬇ CSV` descarga **exactamente lo que ves en pantalla**, con las banderas incluidas.
+`⬇ CSV` descarga **exactamente lo que ves en la tabla Por armado**, con errores y notas incluidos.
 
-El total de abajo usa **SKUs totales ÷ horas totales**, no el promedio de las velocidades. Los renglones ⛔
-quedan fuera del total y el pie lo dice.
+El total de abajo usa **SKUs totales ÷ horas totales**, no el promedio de las velocidades. Los renglones
+sin tiempo quedan fuera del total y el pie lo dice.
 
 ---
 
@@ -627,7 +653,7 @@ armado a medias recuperable. Nunca las dos cosas en cero.
 | `⚠ Sin imágenes` | No cargó la base de imágenes | La app funciona igual, solo sin fotos |
 | Un producto en 🔴 sí estaba | Llegó mercancía, o hubo un ajuste | Ármalo normal. El semáforo nunca bloquea |
 | No hay colores en ningún producto | No se alcanza la tabla de inventario | Arma normal. El semáforo es opcional |
-| Aviso amarillo al elegir el hub | Hay un armado a medias | *Continuar* o *Nuevo armado* |
+| Aviso "Pedido en progreso" al elegir el hub | Hay un armado a medias | *Continuar* o *Nuevo armado* |
 | `❌ Error al guardar` | Error del servidor, no de red | *Reintentar*. Si sigue, *Salir (reporte pendiente)* y avisa |
 | El coordinador no ve un reporte | Sigue en la cola del teléfono | Abre la app en ese teléfono con señal |
 | PIN incorrecto | — | Lo cambia el coordinador en Supabase |

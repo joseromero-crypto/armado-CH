@@ -17,6 +17,14 @@ history (shipped), not current behaviour.
 - Masterview (product images) is read-only here: public bucket `masterview`, uploaded only from Invoice Reader's
   admin screen. `imagedb.json` is its bundled offline copy.
 
+## Visual design
+Calii theme: white + teal `#00C3B3`, Plus Jakarta Sans. Handoff §7.0 has the details; Sorting Hub is the reference.
+- Only `--c-*` tokens. No other hues (one exception: `--c-warn`, only for the semáforo's yellow dot), no gradients, no ALL-CAPS labels, no monospace, nothing at weight 900.
+- Status: teal dot = OK · black pill = needs attention · hollow dot = empty · `--c-danger` = hard errors and destructive only.
+- At most one loud teal per view. Text on teal is ink. The value the worker came for is the biggest thing on screen.
+- No emoji in the UI: `ic()` / `stIc()` / `dot()` from the sprite. Emoji in the manual .md render through `MD_IC`.
+- Keep the app's class names: JS overwrites `className` on rows, modal buttons and badges.
+
 ## Rules that must survive any change
 1. Assembler inputs are only barcode + quantity. No new fields to type.
 2. Advisory signals never block, disable, auto-skip or reorder items.

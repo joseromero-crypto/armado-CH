@@ -44,7 +44,7 @@ works on the code.
 ```
 armado-CH/
 ├── index.html                  # the entire app — HTML + CSS + JS, one file, no build step
-├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p8')
+├── sw.js                       # service worker, network-first shell cache (CACHE_NAME 'calii-armado-v2-3-p10')
 ├── netlify.toml                # cache headers + X-Frame-Options/nosniff
 ├── imagedb.json                # bundled copy of masterview/latest.json (~2.0 MB) — the FALLBACK, not the source (§9.10)
 ├── manual/manual-armado-ch.md  # staff manual; fetched at runtime by the in-app 📖 screen
@@ -120,6 +120,8 @@ grant select, insert on public.<table> to anon;   -- trim to what the table need
 RLS policies still decide which rows. `picks` / `partial_events` predate the change and are unaffected.
 Ref: https://github.com/orgs/supabase/discussions/45329
 
+`rec_events` belongs to MH Recibo. Read-only from here, for the error metrics (§9.8).
+
 ---
 
 ## 4. Storage map
@@ -168,6 +170,7 @@ All access is wrapped in try/catch. Writes that matter go through `trySetLocalSt
 | `calii_imgdb_cache` | old image DB copy, replaced by Cache Storage `calii-masterview` (§9.10) | removed at the start of every `loadImageDB` |
 | `calii_order_history` | today's finished report CSVs (silent backup) | filtered to today on every save |
 | `calii_metrics_cache` | metrics sidecars keyed by path | pruned to files that still exist |
+| `calii_rec_match` | reception → assembly match `{od, pct}` by `rec_events` id (§9.8) | forever |
 | `calii_ordercount_{slug}` | `{date, activos, reserva}` from this device's last upload | coordinator display only |
 | `calii_registro_ticks_{reportPath}` | ticked rows in the registration copilot | forever |
 | `calii_sum_sort` | summary-screen sort preference | forever |
@@ -228,8 +231,23 @@ Per-item `assembler` = whoever resolved that row, so multi-person orders attribu
 
 Screens are `<div id="screen-X" class="screen">`; `showScreen(name)` swaps them.
 
+### 7.0 Visual design (Calii theme, 2026-11-06)
+White + Calii teal, Plus Jakarta Sans. The `<style>` starts with `calii-theme.css` v1 pasted whole; the app layer below it
+keeps the class names the JS uses and only reads `--c-*` tokens. Reference implementation: Calii Sorting Hub.
+- **Emoji in this document are names, not pixels.** The app shows SVG icons from the sprite at the top of `<body>`
+  (`ic(name)`, `stIc(name,kind)`, `dot(kind)`), or just the words. Status chips draw their dot with `::before`.
+- **The manual keeps its emoji** as text tokens. `_mdIc` turns each into the same icon or dot at render time (also the
+  legend). A new emoji in the .md needs an entry in `MD_IC`, or it shows as an emoji.
+- **Semáforo:** nothing / yellow dot (`amarillo`) / danger dot (`rojo`). `--c-warn` is the one hue outside the theme, kept
+  on purpose because staff know the semáforo by its colors, and it's used only for this dot (ink ring so it shows on grey).
+  Other needs-attention states stay ink, including `🟠 Posible error de armado`; `⚫` in the manual is an ink dot.
+- **Item panel:** Solicitado is the `c-highlight` hero, so Confirmar is ink, not teal. The sticky title repeats the quantity,
+  because the qty field's focus scrolls the hero away. `bc-field` is focused with `preventScroll` (no keyboard there).
+- Modals stay centered on phones (the theme's bottom sheet would sit under the keyboard on the PIN and typed confirms).
+  `--list-header-h` is 164px. `.sum-actions` is deliberately not sticky: the summary is a review step (§11).
+
 ### 7.1 Home
-Coordinador (PIN) · Armar Pedido · 📖 Manual · `⏳ N pendiente(s) de enviar` outbox pill (tap = flush).
+Coordinador (PIN) · Armar pedido · 📖 Manual · `⏳ N pendiente(s) de enviar` outbox pill (tap = flush).
 
 ### 7.2 Setup (assembler)
 1. Tap a hub → `pickHub` resets per-hub state → `fetchOrderForHub` (§8.1).
@@ -251,7 +269,7 @@ Coordinador (PIN) · Armar Pedido · 📖 Manual · `⏳ N pendiente(s) de envia
      (`reportsForOrder`) and nothing in the partial was confirmed after it. No "Continuar" is offered, and the
      leftover is archived + deleted (`leftover_after_report`). This is what stops finished orders being resumed.
    - nothing.
-5. **Iniciar Armado** is enabled only when: hub + order loaded, a name is picked (if any are configured),
+5. **Iniciar armado** is enabled only when: hub + order loaded, a name is picked (if any are configured),
    the stale modal was acknowledged (`_staleAck`), and `_partialCheck` is `'none'` with no pending
    partial. While checking it reads `Verificando progreso…`. On `'error'`: `⚠ No pude verificar… ·
    Reintentar`, and after one failed retry `Empezar de cero de todos modos` (danger modal).
@@ -317,8 +335,9 @@ Reached from **Finalizar pedido** (`showSummary`, mode `'live'`) or from 📋 Pe
 | 🖼 Imágenes | `imagenes` | Read-only: `Masterview actualizado el dd/mm · se sube desde Invoice Reader (admin)` + product count (§9.10) | `refreshImgDbStatus` |
 
 ### 7.6 Metrics, Registro, Manual
-- **📊 Métricas** (coordinator page, not a screen since 2026-10-21) — one row per sidecar; filters (armador, hub,
-  7/30/90/todo, solo irregulares), sortable headers, weighted SKUs/hr footer, `⬇ CSV` of the current view, per-row 🗑 (§9.8).
+- **📊 Métricas** (coordinator page, not a screen since 2026-10-21) — `Por armador` rollup + `Por armado` table, one row per
+  sidecar; filters (armador, hub, 7/30/90/todo, solo irregulares), sortable headers, weighted SKUs/hr footer, `⬇ CSV` of
+  the armado table, per-row 🗑 (§9.8).
 - **📋 Registro** — registration copilot (§9.9).
 - **📖 Manual** — renders `manual/manual-armado-ch.md` at runtime with a tiny Markdown converter
   (`_mdToHtml`), one collapsible per `## ` section; `⬇ PDF` = `window.print()` with a print stylesheet.
@@ -374,7 +393,7 @@ any day can resume it.
 **Load** (`loadPartialProgress`): reads local **and** remote, returns the newer by `savedAt`, and writes a
 newer remote back to local. It runs when the hub is tapped; `↩ Continuar pedido` re-checks the remote copy (§7.2). Remote read = newest versioned file that parses, falling back to older versions,
 then the legacy flat file. Returns `found | none | error`; `error` (couldn't confirm either way) keeps
-Iniciar Armado blocked.
+Iniciar armado blocked.
 
 **What deletes a partial** — `async clearPartialSave(hub, orderDate, reason, done, total, {payload})` (v2.3):
 1. finds the newest copy (local vs remote by `savedAt`, or `opts.payload`);
@@ -419,7 +438,7 @@ older than `RESPALDO_DAYS` (30) once per hub per session.
 **Starting fresh over existing work:**
 - `forceStartIgnoringPartialCheck` (after a failed check + failed retry) starts fresh. Its first save becomes
   the newest version, and after 3 saves the old versions are pruned.
-- When the 🛟 card is showing, `Iniciar Armado` is **enabled**. Starting fresh writes a new partial, and
+- When the 🛟 card is showing, `Iniciar armado` is **enabled**. Starting fresh writes a new partial, and
   recovery is then never offered again for that order (it is only offered when no partial exists).
 
 ### 8.2b Order status (v2.3 Phase 3)
@@ -584,10 +603,33 @@ assembly outflow isn't yet discounted in the snapshot).
 - Sidecar from `computeOrderMetrics`: `minutosReloj` (Σ segments) and `minutosActivos` (minus inter-item gaps
   > `IDLE_GAP_MIN` 5 min) — both reported, never merged; SKUs/hr; median sec/SKU; counts and
   `% completo/parcial/sobrante/faltante/surtido`; `porArmador`; semáforo accuracy counters; `flags`.
-- Flags: 🌙 `CRUZA_DIA` · ⏸ `MULTI_SESION` · 🕐 `PAUSA_LARGA` (>15 min) · 👥 `MULTI_ARMADOR` ·
-  🔹 `PEDIDO_CHICO` (<10 SKUs) · ⏳ `INCOMPLETO` · 📶 `REPORTE_DIFERIDO` · 📅 `PEDIDO_VIEJO` ·
-  ⛔ `SIN_TIEMPO` · 🛟 `RECUPERADO`. Irregular rows are flagged, never dropped.
-- Footer rate = total SKUs ÷ total hours (not mean of rates), excluding `SIN_TIEMPO`.
+- Flags: `CRUZA_DIA` · `MULTI_SESION` · `PAUSA_LARGA` (>15 min) · `MULTI_ARMADOR` · `PEDIDO_CHICO` (<10 SKUs) ·
+  `INCOMPLETO` · `REPORTE_DIFERIDO` · `PEDIDO_VIEJO` · `SIN_TIEMPO` · `CERRADO_COORDINADOR` · `RECUPERADO`. Shown as
+  words in the last column, Notas (`FLAG_META[f].corto`). Irregular rows are flagged, never dropped.
+- **Two rates on screen:** `SKUs/hr reloj` (`skusHrReloj`) and `SKUs/hr app` (`skusHrActivo`; `minutosActivos` is labelled
+  Min app). Reloj swings with pauses (rate vs idle share r = −0.67, median 23 % of the clock idle). App = gaps over 5 min
+  between two confirms removed. Seg/SKU left the table (still in the CSV).
+- ⚠ **`handleSec` / `seg_busqueda` / `segMedianoPorSku` before the 2026-11-06 deploy are unreliable.** `openedAt` is stamped with
+  `serverNow()` but `computeHandleSec` subtracted it from `Date.now()`, so the phone's clock skew landed in every value and a
+  slow phone clamped to 0 (16 of Daniel's 21 assemblies since 2026-10-20). Fixed: both sides are `serverNow()`. Old reports,
+  picks and sidecars keep the bad values. Any duration must take both instants from `serverNow()`.
+- Footer rates = total SKUs ÷ total hours (not mean of rates), only rows with `minutosActivos > 0`.
+- **Errores (`loadErroresRecepcion`, 2026-11-06)** — reads MH Recibo's `rec_events` (anon SELECT, `area=abarrotes`,
+  `cerrar` + `admin`), never writes there. Nothing is stored: rows get `m._rec = {fecha, lista}` in memory on each load,
+  after the table has rendered; a failed read leaves `—` and a note. Latest state per session as MH Recibo's `listCerradas`.
+  - **Match (`_matchRecepcion`):** Abarrotes is assembled one day and received the next morning. Among the hub's picks dated
+    **before** the reception, within `REC_MAX_DIAS` (10), take the order covering the most lines of the envío file
+    (`recibo/{cerrar.detalle.envio}`), at least `REC_MIN_COINCIDE` (80 %). Real data: 98–100 % for the right one, ≤15 % for any
+    other. Below it nothing is attributed and the note counts it. A match is cached in `calii_rec_match` by event id.
+  - **Only `enviado` and `recibido` are read from `cerrar.detalle.errores`.** A comes from `picks` (latest row per
+    sku+ronda, rondas summed) and `clasificarErrores` redoes the origin, because receptions closed before MH Recibo's
+    2026-11-06 fix stored `armado`/`origen` from that morning's assembly (both 2026-11-05 receptions have A=0 on every line).
+  - **Types:** A=R≠E `captura` · A=E, R>E `de_mas` · A=E, R<E `faltante` · else `revisar` · exact −n/+n of one family =
+    one `cruce`. Assembler errors = `faltante`, `de_mas`, `cruce`. Transport can't lose stock (tarimas are wrapped and
+    the truck sealed), so a faltante is the assembler's. `captura` and `revisar` don't count.
+  - **Who:** the armador of the sku's latest pick. Never picked → the assembly's only armador, else `Sin asignar`.
+  - Receptions closed before 2026-11-03 have no `errores`: with differences they stay `—`. Rates divide only by assemblies
+    with a reception. Fecha corta / dañadas from the reception are not counted (`cerrar` has totals, not lines).
 
 ### 9.9 Registration copilot (📋 on a report)
 Parses the report, drops `Pendiente` rows, sorts **A–Z by product** (Retool is sorted the same way, so both
@@ -704,7 +746,7 @@ Found while reading the code on 2026-10-20. None fixed yet.
 1. Older partials become invisible to assemblers when a newer order date is uploaded (§8.2). **Mitigated (v2.3):**
    the upload stop warns before it happens, and 🗂 Respaldos lists every partial of a hub (view, close, restore).
 2. ~~🛟 recovery needs the order CSV~~ — **fixed (v2.3 Phase 4):** falls back to `pedido_completo` (R1).
-3. **The 🛟 card doesn't block Iniciar Armado**, so a fresh start buries recoverable work.
+3. **The 🛟 card doesn't block Iniciar armado**, so a fresh start buries recoverable work.
 4. ~~Order 🗑 checks nothing~~ — **fixed (v2.3 Phase 5):** pre-flight + typed BORRAR when work is attached (§8.2c).
 5. ~~Remote partial writes have no retry~~ — **fixed (v2.3 Phase 7, D5).**
 6. ~~Local partials never cleaned up~~ — **fixed (v2.3 Phase 7, D6):** finished orders older than 7 days.

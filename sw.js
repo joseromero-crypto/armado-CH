@@ -1,7 +1,7 @@
 /* Calii Armado CH — service worker (§3.6)
    Network-first for the app shell: online always gets the freshest deploy, offline falls back to cache.
    BUMP CACHE_NAME on every deploy that changes index.html. */
-const CACHE_NAME = 'calii-armado-v2-3-p8';
+const CACHE_NAME = 'calii-armado-v2-3-p10';
 const MV_CACHE = 'calii-masterview'; // written by index.html, must survive deploys
 const SHELL = [
   './',
@@ -30,7 +30,7 @@ self.addEventListener('fetch', (e) => {
   e.respondWith((async () => {
     try {
       const net = await fetch(e.request);
-      if (net && net.ok && (url.origin === self.location.origin || url.hostname.includes('cloudflare'))) {
+      if (net && net.ok && (url.origin === self.location.origin || url.hostname.includes('cloudflare') || url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com')) {
         const copy = net.clone();
         caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
       }
